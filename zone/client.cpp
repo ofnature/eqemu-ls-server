@@ -8840,6 +8840,17 @@ static void CollectDragonHoardItemsCallback(int16 slot_id, EQ::ItemInstance* ins
 		delete inst;
 }
 
+// [DH_NAMES_PENDING] Dragon's Hoard UI — item names / icons (client-side follow-up; server packets OK):
+// - Items load in the DH window; slot count / capacity (e.g. 16/200) behaves correctly.
+// - Item names render blank: reversed layout suggests the DH list widget keeps display name in a per-row
+//   structure at list entry+0x20 (string/CXStr), and that field is never filled from ItemDefinition::Name (+0x00).
+// - Icons show a pearl-necklace-style placeholder: same class of issue — IconNumber from the parsed item/blob
+//   is not wired into whatever the list row uses for art.
+// - Blob parse path sub_14065BD70 is consistent with server stream ([DH_BLOB_DUMP] / laurion blob encoder); root cause
+//   is after parse (UI list population), not raw 0x77 payload truncation in the obvious places.
+// - Next RE step: trace where list rows are built (e.g. sub_1403C1D60 or adjacent init) and ensure name/icon are
+//   copied from the client ItemDefinition / item struct into list entry+0x20 (and icon path) after item packets arrive.
+
 void Client::SendDragonHoardItemList() {
 	std::vector<std::pair<int16_t, EQ::ItemInstance*>> items;
 	database.GetDragonHoardItems(AccountID(), CollectDragonHoardItemsCallback, &items);
