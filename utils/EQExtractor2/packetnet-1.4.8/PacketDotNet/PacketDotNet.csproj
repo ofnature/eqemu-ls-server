@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net472</TargetFrameworks>
+    <Authors>Chris Morgan (chmorgan@gmail.com)</Authors>
+    <LangVersion>latest</LangVersion>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>..\packetnet.snk</AssemblyOriginatorKeyFile>
+    <Configurations>Release;Debug</Configurations>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageId>$(AssemblyName)</PackageId>
+    <Description>High performance .NET assembly for dissecting and constructing network packets such as Ethernet, IP, TCP, UDP, etc.</Description>
+    <PackageLicense>https://github.com/dotpcap/packetnet/blob/master/LICENSE</PackageLicense>
+    <PackageLicenseExpression>MPL-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/dotpcap/packetnet</PackageProjectUrl>
+    <PackageTags>packet packets ethernet ip tcp udp icmp network</PackageTags>
+    <PackageVersion>$(Version)</PackageVersion>
+    <Pack>true</Pack>
+    <RepositoryUrl>https://github.com/dotpcap/packetnet</RepositoryUrl>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <DefineConstants>TRACE;RELEASE</DefineConstants>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+  </PropertyGroup> 
+
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+    <DefineConstants>TRACE;DEBUG</DefineConstants>
+    <DebugType>embedded</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+  </PropertyGroup>  
+
+  <ItemGroup Condition="'$(Configuration)'=='Debug'">
+    <PackageReference Include="log4net" Version="3.0.4" />
+  </ItemGroup>  
+
+  <ItemGroup>
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
+  </ItemGroup>
+
+</Project>
