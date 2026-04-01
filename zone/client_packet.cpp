@@ -17550,6 +17550,17 @@ void Client::Handle_OP_AABuy(const EQApplicationPacket *app)
 // Gaps now: post deposit/withdraw only action=0 owned=1 (client clears list per 1f87f0) — trial SendDragonHoardItemList+action=2 left COMMENTED in case 3/4 [DH_TXT_ROOT_AUDIT]. 6D2D path lacks trailing action=2 vs case 0. Laurion MoveItem 28B decode + LaurionToServerSlot Type0 36..235 / Type38 must stay aligned. SendDragonHoardItemList 500ms delay is debug artifact. Normal Handle_OP_MoveItem success sends no OP_MoveItem echo (only DH intercept echoes MoveItem).
 // Do not delete this block; fix by uncommenting trials / aligning sequences — no blob changes required for deposit opcode path.
 
+// [DH_NAMES_PENDING] Dragon's Hoard UI — item names / icons (client-side follow-up; server handlers OK):
+// - Items load in the DH window; slot count / capacity (e.g. 16/200) behaves correctly.
+// - Item names render blank: reversed layout suggests the DH list widget keeps display name in a per-row
+//   structure at list entry+0x20 (string/CXStr), and that field is never filled from ItemDefinition::Name (+0x00).
+// - Icons show a pearl-necklace-style placeholder: same class of issue — IconNumber from the parsed item/blob
+//   is not wired into whatever the list row uses for art.
+// - Blob parse path sub_14065BD70 is consistent with server stream ([DH_BLOB_DUMP] / laurion blob encoder); root cause
+//   is after parse (UI list population), not raw 0x77 payload truncation in the obvious places.
+// - Next RE step: trace where list rows are built (e.g. sub_1403C1D60 or adjacent init) and ensure name/icon are
+//   copied from the client ItemDefinition / item struct into list entry+0x20 (and icon path) after item packets arrive.
+
 // ----------------------------------------------------------------------------
 // OP_DragonsHoard (0x6D0F)
 // ----------------------------------------------------------------------------
@@ -18364,6 +18375,12 @@ void Client::Handle_OP_DragonsHoardClient(const EQApplicationPacket *app)
 				// Log(Logs::General, Logs::Error, "[DH_UNKNOWN_6D2D] Client not fully zoned in (state=%d), skipping item list send", (int)client_state);
 				return;
 			}
+			// [DH_SEND_ORDER_AUDIT] Handle_OP_DragonsHoardClient action==1 — exact outbound order (after Connected()):
+			//   1) OP_DragonsHoard, 5 bytes: dword @0 = 8, byte @4 = 0  (QueuePacket → safe_delete)
+			//   2) OP_DragonsHoard, 5 bytes: dword @0 = 8, byte @4 = 1  (QueuePacket → safe_delete)
+			//   3) OP_DragonsHoard, sizeof(DragonsHoard_Response_Struct): action=0, owned=1, max_slots=200, item_count=GetDragonHoardCount
+			//   4) SendDragonHoardItemList() — for each DB row: SendItemPacket(5000+slot, inst, ItemPacketDragonHoard) (see zone/client.cpp)
+			// No action=2 or other packets in this block.
 			// 1) action=8 for DH enable — [DH_DEPOSIT_GATE_FIX] use byte[4]=0 (see commented line below; old note was byte[4]=1 for window+0x356).
 			// // 1) action=8: byte[4]=1 for window+0x356 (inner gate that allows deposits)
 			// (commented out — replaced by new version below with byte[4]=1)

@@ -42,6 +42,8 @@
 #include <numeric>
 #include <cassert>
 #include <cinttypes>
+#include <algorithm>
+#include <cstring>
 
 namespace Laurion
 {
@@ -873,6 +875,14 @@ namespace Laurion
 			return;
 		}
 
+		// [DH_ENCODE_CHAIN] OP_ItemPacket Laurion encode path:
+		//   - Maps emu ItemPacket_Struct (after 4-byte PacketType) via InternalSerializedItem_Struct → inst + slot_id.
+		//   - Writes client packet type prefix: buffer.WriteInt32((int32_t)type) then SerializeItem(..., old_item_pkt->PacketType).
+		//   - ItemPacketDragonHoard (single): case falls through to default — same SerializeItem call; DH wire body is built inside
+		//     SerializeItem when slot_id is 5000..5199 (is_dragon_hoard): 16-byte GUID + sub_14029dc10-aligned header + SerializeItemDefinitionLaurionBlob + post-blob tail.
+		//   - ItemPacketDragonHoardBatch: memcpy passthrough of payload after first 4 bytes — no SerializeItem / no blob builder here.
+		//   - SerializeItemDefinitionLaurionBlob is only invoked from SerializeItem's is_dragon_hoard branch (not directly from this ENCODE).
+		//   - SerializeOneDragonHoardItem() also calls SerializeItem(..., ItemPacketDragonHoard) for batch assembly elsewhere.
 		switch (type)
 		{
 		case item::ItemPacketType::ItemPacketParcel: {
@@ -4067,10 +4077,54 @@ namespace Laurion
 		return std::stoi(number);
 	}
 
+	static const size_t LAURION_BLOB_TOTAL_SIZE = 4096;
+
+#if 0  // [DH_BLOB_LEGACY] Previous blob serializer (variable prefix, [DH_BLOB_ORDER_AUDIT], audits, synthetic ID). Preserved — do not delete.
 	// Blob layout for client parser sub_14065bd70 (item definition stream). Used only for Dragon's Hoard length-prefixed blob.
 	// Client parser needs enough blob data to complete without running off the end. We write known fields at fixed offsets, then pad to total size.
 	// [DH_CLEANUP_R1] Removed DH_BLOB_ENTRY and other investigation-only logging from blob serializer.
 	static const size_t LAURION_BLOB_TOTAL_SIZE = 4096;
+	// [DH_BLOB_ORDER_AUDIT] SerializeItemDefinitionLaurionBlob — write order (keep in sync with body below):
+	//   1 WriteUInt8        ItemClass (client arg1[0xe9] / stream byte after cursor sync in sub_14065bd70)
+	//   2 WriteBytes        Name + NUL (strlen+1)
+	//   3 WriteBytes        Lore + NUL (strlen+1)
+	//   4 WriteInt32        ExtractIDFile(item->IDFile)
+	//   5 WriteInt32        0 (IDFile2)
+	//   6 WriteInt32        ItemNumber: (uint32_t)item->ID | 0x00800000u [DH_SYNTHETIC_ID_V2] (plain ID line commented in body)
+	//   7 WriteInt32        Weight
+	//   8 WriteUInt8        NoRent
+	//   9 WriteUInt8        NoDrop
+	//  10 WriteUInt8        Attuneable
+	//  11 WriteUInt8        Size
+	//  12 WriteInt32        Slots
+	//  13 WriteUInt32       max(Price,1) Cost
+	//  14 WriteInt32        Icon
+	//  15 WriteUInt8        0 eGMRequirement
+	//  16 WriteUInt8        0 unknown (client +0xea)
+	//  17 WriteUInt8        CR
+	//  18 WriteUInt8        DR
+	//  19 WriteUInt8        PR
+	//  20 WriteUInt8        MR
+	//  21 WriteUInt8        FR
+	//  22 WriteUInt8        SVCorruption
+	//  23 WriteUInt8        AStr
+	//  24 WriteUInt8        ASta
+	//  25 WriteUInt8        AAgi
+	//  26 WriteUInt8        ADex
+	//  27 WriteUInt8        ACha
+	//  28 WriteUInt8        AInt
+	//  29 WriteUInt8        AWis
+	//  30 WriteInt32        HP
+	//  31 WriteInt32        Mana
+	//  32 WriteInt32        Endur
+	//  33 WriteInt32        AC
+	//  34 WriteInt32        Regen
+	//  35 WriteInt32        ManaRegen
+	//  36 WriteInt32        EnduranceRegen
+	//  37 WriteInt32        Classes
+	//  38 WriteInt32        Races
+	//  39 WriteInt32        Deity
+	//  40 WriteBytes        zero pad to LAURION_BLOB_TOTAL_SIZE (4096) if needed
 	static void SerializeItemDefinitionLaurionBlob(SerializeBuffer& buffer, const EQ::ItemData* item) {
 		// byte 0: Type / ItemClass (arg1[0xe9])
 		buffer.WriteUInt8(item->ItemClass);
@@ -4093,14 +4147,46 @@ namespace Laurion
 		// buffer.WriteBytes(lore80, 80);
 		size_t lore_consumed = strlen(item->Lore) + 1;
 		buffer.WriteBytes(item->Lore, lore_consumed);
+		// [DH_BLOB_C0_AUDIT] Absolute blob offset 0xC0 (192) is NOT a fixed field: bytes [0]=ItemClass, then
+		// null-terminated Name, then null-terminated Lore. Fixed binary tail starts at
+		// P = 1 + name_consumed + lore_consumed. If 0xC0 < P, the byte is inside ItemClass/Name/Lore.
+		// If P <= 0xC0 < P+87, map rel = 0xC0 - P to the tail layout (87 bytes):
+		//   0-3 IDFile, 4-7 IDFile2(0), 8-11 ItemNumber, 12-15 Weight, 16 NoRent, 17 NoDrop, 18 Attuneable,
+		//   19 Size, 20-23 Slots, 24-27 Cost, 28-31 Icon, 32 eGM(0), 33 unknown(0), 34-39 CR,DR,PR,MR,FR,SVCorruption,
+		//   40-46 STR,STA,AGI,DEX,CHA,INT,WIS, 47-50 HP, 51-54 Mana, 55-58 Endur, 59-62 AC, 63-66 Regen,
+		//   67-70 ManaRegen, 71-74 EnduranceRegen, 75-78 Classes, 79-82 Races, 83-86 Deity.
+		// If 0xC0 >= P+87, the byte is in zero padding to LAURION_BLOB_TOTAL_SIZE.
+		// Example: P=105 => 0xC0 is first padding byte after Deity. P=121 => 0xC0 is first byte of EnduranceRegen (LE).
+		// [DH_BLOB_F0_AUDIT] Absolute offset 0xF0 (240): same P and 87-byte tail as [DH_BLOB_C0_AUDIT].
+		//   If 240 < P: byte is inside ItemClass/Name/Lore (which substring depends on P).
+		//   If P <= 240 < P+87: rel = 240 - P maps to the same tail table (rel 0..86); e.g. rel 40 = AStr, rel 83-86 = Deity (LE).
+		//   If 240 >= P+87: zero padding to LAURION_BLOB_TOTAL_SIZE.
+		//   Tail coverage of 240 requires 154 <= P <= 240 (since rel <= 86 => P >= 240-86 = 154).
+		// Typical item (short name + short/empty lore): P is often ~20–120, so P+87 < 240 → 0xF0 is padding (0x00), not a field.
+		// Long prefix example: P=200 => rel=40 => uint8 item->AStr (STR stat).
 		// LogInfo("[DH_BLOB_FIX] item_id={} name_len={} lore_len={}", item->ID, name_consumed, lore_consumed);
 		// IDFile, IDFile2, ItemNumber, Weight, ... (offsets now variable after Name/Lore)
 		// bytes 145-148: IDFile (int32)
 		buffer.WriteInt32(ExtractIDFile(item->IDFile));
 		// bytes 149-152: IDFile2 (int32, 0)
 		buffer.WriteInt32(0);
-		// bytes 153-156: ID / ItemNumber (int32)
-		buffer.WriteInt32(static_cast<int32_t>(item->ID));
+		// [DH_BLOB_ID_AUDIT] ItemNumber / server item ID: single write in this blob.
+		//   Code: WriteInt32(static_cast<int32_t>(item->ID)) — 4 bytes, little-endian (SerializeBuffer convention).
+		//   Active serializer: [DH_SYNTHETIC_ID] / [DH_SYNTHETIC_ID_V2] OR 0x00800000; plain WriteInt32(item->ID) commented below.
+		//   Position in fixed tail (after ItemClass + Name\0 + Lore\0): relative bytes [8..11] of the 87-byte tail
+		//   (tail byte 0 = start of IDFile int32). Absolute blob indices: (P+8)..(P+11) with
+		//   P = 1 + strlen(Name)+1 + strlen(Lore)+1.
+		//   IDFile (tail [0..3]) is separate: ExtractIDFile(item->IDFile) from the item's IDFile string, not item->ID.
+		// Synthetic / non-client-db IDs: the client still receives this int32 in the definition stream; if it does
+		// not match a row in the client's local item table, UI/tooltips may fall back to blob fields, show wrong
+		// art, or reject the item — behavior is client-dependent (verify in client, e.g. sub_14065bd70 callers).
+		// bytes 153-156: ID / ItemNumber (int32) — obsolete fixed-offset comment (valid only if Name/Lore were fixed 64+80)
+		// [DH_SYNTHETIC_ID] OR in 0x00800000 on ItemNumber so the int32 does not match a real client item DB id; goal is
+		// to force the Laurion client to treat this as a stream-defined item and use blob-backed fields (e.g. near
+		// item+0x140 in the client struct) instead of the cached/local-DB template path (e.g. item+0xc0 region).
+		// [DH_SYNTHETIC_ID_V2] Synthetic ItemNumber active: original item->ID WriteInt32 stays commented; no lines deleted.
+		// buffer.WriteInt32(static_cast<int32_t>(item->ID));
+		buffer.WriteInt32(static_cast<int32_t>(static_cast<uint32_t>(item->ID) | 0x00800000u));
 		// bytes 157-160: Weight (int32)
 		buffer.WriteInt32(item->Weight);
 		// byte 161: NoRent (uint8)
@@ -4168,7 +4254,112 @@ namespace Laurion
 		buffer.WriteInt32(static_cast<int32_t>(item->Races));
 		// +0x148: Deity (4 bytes)
 		buffer.WriteInt32(static_cast<int32_t>(item->Deity));
-		// pad to LAURION_BLOB_TOTAL_SIZE (1469)
+		// pad to LAURION_BLOB_TOTAL_SIZE (4096) [DH_BLOB_ORDER_AUDIT] step 40
+		const size_t pos = buffer.size();
+		if (pos < LAURION_BLOB_TOTAL_SIZE) {
+			const size_t pad_len = LAURION_BLOB_TOTAL_SIZE - pos;
+			static uint8_t zeroes[LAURION_BLOB_TOTAL_SIZE] = {0};
+			buffer.WriteBytes(reinterpret_cast<const char*>(zeroes), pad_len);
+		}
+	}
+#endif  // [DH_BLOB_LEGACY]
+
+	// [DH_BLOB_REWRITE] Numeric tail from IDFile onward matches mq2-laurion ItemDefinition order (0x0b0–0x14b), then pad to LAURION_BLOB_TOTAL_SIZE.
+	// [DH_BLOB_VARLEN] Name/Lore are variable-length NUL-terminated strings (not fixed Name[64]/LoreName[80]/AdvancedLoreName[32]).
+	// 0x0ec Lore int32 uses ItemData::LoreGroup (MQ2 ItemDefinition::Lore). [DH_SYNTHETIC_ID_V2] remains only in legacy #if 0 above.
+	static void SerializeItemDefinitionLaurionBlob(SerializeBuffer& buffer, const EQ::ItemData* item) {
+		// [DH_BLOB_VARLEN] Fixed-size ItemDefinition-style prefix (do not delete):
+		// char name64[64]{};
+		// char lore80[80]{};
+		// {
+		// 	const size_t nlen = std::min(strlen(item->Name), (size_t)63);
+		// 	memcpy(name64, item->Name, nlen);
+		// 	name64[nlen] = '\0';
+		// }
+		// buffer.WriteBytes(name64, 64);
+		// {
+		// 	const size_t llen = std::min(strlen(item->Lore), (size_t)79);
+		// 	memcpy(lore80, item->Lore, llen);
+		// 	lore80[llen] = '\0';
+		// }
+		// buffer.WriteBytes(lore80, 80);
+		// char advanced_lore[32]{};
+		// buffer.WriteBytes(advanced_lore, sizeof(advanced_lore));
+
+		buffer.WriteBytes(item->Name, strlen(item->Name) + 1);
+		buffer.WriteBytes(item->Lore, strlen(item->Lore) + 1);
+
+		buffer.WriteInt32(ExtractIDFile(item->IDFile));
+		buffer.WriteInt32(0);
+		buffer.WriteInt32(static_cast<int32_t>(item->ID));
+		buffer.WriteInt32(static_cast<int32_t>(item->Slots));
+		buffer.WriteInt32(static_cast<int32_t>(item->Price));
+		buffer.WriteInt32(item->Icon);
+		buffer.WriteUInt8(0);
+		buffer.WriteUInt8(0);
+		buffer.WriteUInt8(0);
+		buffer.WriteUInt8(0);
+		buffer.WriteInt32(item->Weight);
+		buffer.WriteUInt8(item->NoRent);
+		buffer.WriteUInt8(item->NoDrop);
+		buffer.WriteUInt8(item->Attuneable);
+		buffer.WriteUInt8(0);
+		buffer.WriteUInt8(0);
+		buffer.WriteUInt8(0);
+		buffer.WriteUInt8(0);
+		buffer.WriteUInt8(0);
+		buffer.WriteInt32(0);
+		buffer.WriteUInt8(0);
+		buffer.WriteUInt8(0);
+		buffer.WriteUInt8(0);
+		buffer.WriteUInt8(0);
+		buffer.WriteUInt8(0);
+		buffer.WriteUInt8(0);
+		buffer.WriteUInt8(0);
+		buffer.WriteUInt8(0);
+		buffer.WriteUInt8(0);
+		buffer.WriteInt32(0);
+		buffer.WriteUInt8(item->Size);
+		buffer.WriteUInt8(item->ItemClass);
+		buffer.WriteUInt8(item->Tradeskills ? 1u : 0u);
+		buffer.WriteUInt8(0);
+		buffer.WriteInt32(item->LoreGroup);
+		buffer.WriteInt32(0);
+		buffer.WriteUInt8(0);
+		buffer.WriteUInt8(static_cast<uint8_t>(item->CR));
+		buffer.WriteUInt8(static_cast<uint8_t>(item->FR));
+		buffer.WriteUInt8(static_cast<uint8_t>(item->MR));
+		buffer.WriteUInt8(static_cast<uint8_t>(item->DR));
+		buffer.WriteUInt8(static_cast<uint8_t>(item->PR));
+		buffer.WriteUInt8(static_cast<uint8_t>(item->SVCorruption));
+		buffer.WriteUInt8(static_cast<uint8_t>(item->AStr));
+		buffer.WriteUInt8(static_cast<uint8_t>(item->ASta));
+		buffer.WriteUInt8(static_cast<uint8_t>(item->AAgi));
+		buffer.WriteUInt8(static_cast<uint8_t>(item->ADex));
+		buffer.WriteUInt8(static_cast<uint8_t>(item->ACha));
+		buffer.WriteUInt8(static_cast<uint8_t>(item->AInt));
+		buffer.WriteUInt8(static_cast<uint8_t>(item->AWis));
+		buffer.WriteUInt8(0);
+		buffer.WriteUInt8(0);
+		buffer.WriteInt32(item->HP);
+		buffer.WriteInt32(item->Mana);
+		buffer.WriteInt32(item->AC);
+		buffer.WriteInt32(static_cast<int32_t>(item->ReqLevel));
+		buffer.WriteInt32(static_cast<int32_t>(item->RecLevel));
+		buffer.WriteInt32(0);
+		buffer.WriteInt32(0);
+		buffer.WriteInt32(0);
+		buffer.WriteInt32(0);
+		buffer.WriteInt32(0);
+		buffer.WriteInt32(0);
+		buffer.WriteInt32(0);
+		buffer.WriteInt32(0);
+		buffer.WriteInt32(0);
+		buffer.WriteInt32(0);
+		buffer.WriteInt32(static_cast<int32_t>(item->Classes));
+		buffer.WriteInt32(static_cast<int32_t>(item->Races));
+		buffer.WriteInt32(static_cast<int32_t>(item->Deity));
+
 		const size_t pos = buffer.size();
 		if (pos < LAURION_BLOB_TOTAL_SIZE) {
 			const size_t pad_len = LAURION_BLOB_TOTAL_SIZE - pos;
@@ -4880,6 +5071,22 @@ namespace Laurion
 			{
 				SerializeBuffer blob_buf;
 				SerializeItemDefinitionLaurionBlob(blob_buf, item);
+				// [DH_BLOB_DUMP] Temporary: first 32 bytes of DH item-definition blob hex (remove after layout verified).
+				{
+					const size_t k_blob_dump_len = 32;
+					const unsigned char *const blob_p = blob_buf.buffer();
+					const size_t blob_sz = blob_buf.size();
+					const size_t dump_n = blob_sz < k_blob_dump_len ? blob_sz : k_blob_dump_len;
+					std::ostringstream blob_dump_hex;
+					blob_dump_hex << std::hex << std::setfill('0');
+					for (size_t di = 0; di < dump_n; ++di) {
+						blob_dump_hex << std::setw(2) << static_cast<unsigned>(blob_p[di]);
+						if (di + 1 < dump_n)
+							blob_dump_hex << ' ';
+					}
+					LogError("[DH_BLOB_DUMP] item_id={} blob_size={} first_32_or_less_hex=[{}]",
+						item->ID, static_cast<uint32_t>(blob_sz), blob_dump_hex.str());
+				}
 				// [DH_BLOB_HERE]
 				buffer.WriteBytes(blob_buf.buffer(), blob_buf.size());
 			}
