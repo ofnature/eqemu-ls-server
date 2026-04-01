@@ -75,6 +75,10 @@ int16 Laurion::invtype::GetInvTypeSize(int16 inv_type)
 		return invtype::KRONO_SIZE;
 	case invtype::typeOther:
 		return invtype::OTHER_SIZE;
+	case invtype::typeDragonHoard:
+		return invtype::DRAGON_HOARD_SIZE;
+	case invtype::typeTradeskillDepot:
+		return invtype::TRADESKILL_DEPOT_SIZE;
 	default:
 		return INULL;
 	}
@@ -135,6 +139,10 @@ const char* Laurion::invtype::GetInvTypeName(int16 inv_type)
 		return "Krono";
 	case invtype::typeOther:
 		return "Other";
+	case invtype::typeDragonHoard:
+		return "Dragon Hoard";
+	case invtype::typeTradeskillDepot:
+		return "Tradeskill Depot";
 	default:
 		return "Unknown Type";
 	}
@@ -152,6 +160,8 @@ bool Laurion::invtype::IsInvTypePersistent(int16 inv_type)
 	case invtype::typeTribute:
 	case invtype::typeTrophyTribute:
 	case invtype::typeGuildTribute:
+	case invtype::typeDragonHoard:
+	case invtype::typeTradeskillDepot:
 		return true;
 	default:
 		return false;

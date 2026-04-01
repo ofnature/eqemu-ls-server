@@ -159,6 +159,16 @@ public:
 		m_pos += len;
 	}
 
+	/** Write raw bytes (no length prefix, no null terminator). Used for fixed-width fields like 16-byte item GUID. */
+	void WriteBytes(const void *data, size_t len)
+	{
+		if (data == nullptr || len == 0) return;
+		if (m_pos + len > m_capacity)
+			Grow(m_capacity + len);
+		memcpy(m_buffer + m_pos, data, len);
+		m_pos += len;
+	}
+
 	void WriteLengthString(uint32_t len, const char *str)
 	{
 		assert(str != nullptr);

@@ -673,45 +673,53 @@ struct NameGeneration_Struct
 ** Length: 140 Bytes
 ** OpCode: 0x0113
 */
-struct CharCreate_Struct
-{
-/*0000*/	uint32	class_;
-/*0004*/	uint32	haircolor;	// Might be hairstyle
-/*0008*/	uint32	beardcolor;	// Might be beard
-/*0012*/	uint32	beard;		// Might be beardcolor
-/*0016*/	uint32	gender;
-/*0020*/	uint32	race;
-/*0024*/	uint32	start_zone;
-	// 0 = odus
-	// 1 = qeynos
-	// 2 = halas
-	// 3 = rivervale
-	// 4 = freeport
-	// 5 = neriak
-	// 6 = gukta/grobb
-	// 7 = ogguk
-	// 8 = kaladim
-	// 9 = gfay
-	// 10 = felwithe
-	// 11 = akanon
-	// 12 = cabalis
-	// 13 = shar vahl
-/*0028*/	uint32	hairstyle;	// Might be haircolor
-/*0032*/	uint32	deity;
-/*0036*/	uint32	STR;
-/*0040*/	uint32	STA;
-/*0044*/	uint32	AGI;
-/*0048*/	uint32	DEX;
-/*0052*/	uint32	WIS;
-/*0056*/	uint32	INT;
-/*0060*/	uint32	CHA;
-/*0064*/	uint32	face;		// Could be unknown0076
-/*0068*/	uint32	eyecolor1;	//its possiable we could have these switched
-/*0073*/	uint32	eyecolor2;	//since setting one sets the other we really can't check
-/*0076*/	uint32	drakkin_heritage;	// added for SoF
-/*0080*/	uint32	drakkin_tattoo;		// added for SoF
-/*0084*/	uint32	drakkin_details;	// added for SoF
-/*0088*/	uint32	tutorial;
+struct CharCreate_Struct {
+    // --- BLOCK 1: NAME (0-64) ---
+    char    name[64];
+
+    // --- BLOCK 2: TOP PADDING (64-72) ---
+    uint32  padding[2];     // Aligns Gender to 72
+
+    // --- BLOCK 3: IDENTITY (72-92) ---
+    uint32  gender;         // Offset 72 (Hex: 01)
+    uint32  race;           // Offset 76 (Hex: 06)
+    uint32  class_;         // Offset 80 (Hex: 05)
+    uint32  deity;          // Offset 84 (Hex: CE)
+    uint32  start_zone;     // Offset 88 (Hex: 2A)
+
+    // --- BLOCK 4: APPEARANCE (92-120) ---
+    uint32  face;           // Offset 92
+    uint32  hairstyle;      // Offset 96
+    uint32  haircolor;      // Offset 100
+    uint32  beard;          // Offset 104
+    uint32  beardcolor;     // Offset 108
+    uint32  eyecolor1;      // Offset 112
+    uint32  eyecolor2;      // Offset 116
+
+    // --- BLOCK 5: THE HIDDEN VARIABLES (120-128) ---
+    // We place the missing variables here in the empty "gap".
+    // The hex dump shows these bytes are 00 00 00 00, so these vars will default to 0.
+    uint32  drakkin_details; // Offset 120 (Satisfies uf.cpp)
+    uint32  tutorial;        // Offset 124 (Satisfies rof2.cpp)
+
+    // --- BLOCK 5.5: LAURION'S SONG PADDING (128-132) ---
+    // Laurion's Song has an extra 4-byte field here before stats
+    uint32  laurion_unknown; // Offset 128 (always 0x00000000 in packet dumps)
+
+    // --- BLOCK 6: STATS (132-160) ---
+    // For Laurion's Song, stats start at offset 132, not 128
+    uint32  STR;            // Offset 132
+    uint32  STA;            // Offset 136
+    uint32  AGI;            // Offset 140
+    uint32  DEX;            // Offset 144
+    uint32  WIS;            // Offset 148
+    uint32  INT;            // Offset 152
+    uint32  CHA;            // Offset 156
+
+    // --- BLOCK 7: TAIL (160-168) ---
+    uint32  drakkin_heritage; // 160
+    uint32  drakkin_tattoo;   // 164
+    // Total size: 168 bytes (struct should still be 168)
 };
 
 /*
@@ -1277,16 +1285,16 @@ struct BindWound_Struct
 */
 
 struct ZoneChange_Struct {
-/*000*/	char	char_name[64];	// Character Name
-/*064*/	uint16	zoneID;
-/*066*/	uint16	instanceID;
-/*068*/	float	y;
-/*072*/	float	x;
-/*076*/	float	z;
-/*080*/	uint32	zone_reason;	//0x0A == death, I think
-/*084*/	int32	success;		// =0 client->server, =1 server->client, -X=specific error
-/*088*/
-};
+	/*000*/ char    char_name[64];  // Character Name
+	/*064*/ uint32  zoneID;         // WAS uint16 -> Now uint32 (4 bytes)
+	/*068*/ uint32  instanceID;     // WAS uint16 -> Now uint32 (4 bytes)
+	/*072*/ float   y;              // Shifted +4 bytes
+	/*076*/ float   x;              // Shifted +4 bytes
+	/*080*/ float   z;              // Shifted +4 bytes
+	/*084*/ uint32  zone_reason;    // 0x0A == death
+	/*088*/ int32   success;        // =0 client->server, =1 server->client
+	/*092*/ // Total size increases by 4 bytes (88 -> 92)
+	};
 
 // Whatever you send to the client in RequestClientZoneChange_Struct.type, the client will send back
 // to the server in ZoneChange_Struct.zone_reason. My guess is this is a memo field of sorts.
@@ -1559,6 +1567,8 @@ enum ItemPacketType {
     ItemPacketCharmUpdate    = 0x6E, // noted as incorrect
     ItemPacketRecovery       = 0x71,
     ItemPacketParcel         = 0x73,
+    ItemPacketDragonHoard    = 0x77,  // Laurion's Song: Type=38 container, slots 0-199
+    ItemPacketDragonHoardBatch = 0x78, // Laurion's Song: single OP_ItemPacket with count(4) + N×258 item blobs (no per-item count)
     ItemPacketInvalid        = 0xFF
 };
 
@@ -2654,19 +2664,21 @@ struct Petition_Struct {
 };
 
 
-struct Who_All_Struct { // 76 length total
-/*000*/	char	whom[64];
-/*064*/	uint32	wrace;		// FF FF = no race
+struct Who_All_Struct { // Modified for 64-bit Client
+	/*000*/ char    whom[64];
+	/*064*/ uint32  wrace;      // FF FF = no race
+	/*068*/ uint32  wclass;     // FF FF = no class
+	/*072*/ uint32  lvllow;     // FF FF = no numbers
+	/*076*/ uint32  lvlhigh;    // FF FF = no numbers
+	/*080*/ uint32  gmlookup;   // FF FF = not doing /who all gm
+	/*084*/ uint32  guildid;
+	/*088*/ uint8   unknown076[64];
+	/*152*/ uint32  type;       // New for SoF. 0 = /who 3 = /who all
 
-/*068*/	uint32	wclass;		// FF FF = no class
-/*072*/	uint32	lvllow;		// FF FF = no numbers
-/*076*/	uint32	lvlhigh;	// FF FF = no numbers
-/*080*/	uint32	gmlookup;	// FF FF = not doing /who all gm
-/*084*/	uint32	guildid;
-/*088*/	uint8	unknown076[64];
-/*152*/	uint32	type;		// New for SoF. 0 = /who 3 = /who all
-/*156*/
-};
+	/*156*/ // -- FIX STARTS HERE --
+			char    _padding_fix[12]; // Catch the extra 12 bytes from the client
+	/*168*/ // -- TOTAL SIZE NOW 168 BYTES --
+	};
 
 struct Stun_Struct { // 4 bytes total
 	uint32 duration; // Duration of stun
@@ -2857,9 +2869,15 @@ struct Object_Struct {
 **
 */
 struct ClickObject_Struct {
-/*00*/	uint32 drop_id;
-/*04*/	uint32 player_id;
-/*08*/
+    uint64_t id;          // 8 Bytes: The Object/Door/Item ID
+
+    union {               // This block allows multiple names for the same 4 bytes
+        uint32 drop_id;   // Used for Items
+        uint32 player_id; // Used for Corpses
+        uint32 type;      // Used for Generic Objects
+    };
+
+    // Total Size: 12 Bytes (8 + 4)
 };
 
 struct Shielding_Struct {
@@ -3533,14 +3551,15 @@ uint8	npccastfilters;			// 0) No, 1) Ignore NPC Casts (all), 2) Ignore NPC Casts
 ** Last Updated: 2/15/2009
 **
 */
-struct	ItemViewRequest_Struct {
-/*000*/	uint32	item_id;
-/*004*/	uint32	augments[6];
-/*024*/ uint32	link_hash;
-/*028*/	uint32	unknown028;
-/*032*/	char	unknown032[12];	//probably includes loregroup & evolving info. see Client::MakeItemLink() in zone/inventory.cpp:469
-/*044*/	uint16	icon;
-/*046*/	char	unknown046[2];
+struct ItemViewRequest_Struct {
+/*000*/ uint32  item_id;
+/*004*/ uint32  augments[6];
+/*024*/ uint32  link_hash;
+/*028*/ uint32  unknown028;
+/*032*/ char    unknown032[12]; 
+/*044*/ uint16  icon;           // Restored for legacy patch compatibility
+/*046*/ char    unknown046[2];  // Restored for legacy patch compatibility
+/*048*/ char    item_name[1];   // Variable name starts here for 64-bit clients
 };
 
 struct ItemAdvancedLoreText_Struct {
@@ -5275,9 +5294,9 @@ struct ApplyPoison_Struct {
 };
 
 struct ItemVerifyRequest_Struct {
-/*000*/	int32	slot;		// Slot being Right Clicked
-/*004*/	uint32	target;		// Target Entity ID
-/*008*/
+/*000*/ int64_t  slot;       // Promoted: 32-bit -> 64-bit (8 bytes)
+/*008*/ uint64_t target;     // Promoted: 32-bit -> 64-bit (8 bytes)
+/*016*/ // Total size is now 16 bytes
 };
 
 struct ItemVerifyReply_Struct {
@@ -6016,10 +6035,10 @@ struct Membership_Struct
 /*000*/ uint32 membership;	// Seen 2 on Gold Account
 /*004*/ uint32 races;	// Seen ff ff 01 00
 /*008*/ uint32 classes;	// Seen ff ff 01 01
-/*012*/ uint32 entrysize; // Seen 15 00 00 00
-/*016*/ int32 entries[21]; //Varies. Seen ff ff ff ff, and 01 00 00 00
-/*104*/ uint32 exit_url_length;	// Length of the exit_url string (0 for none)
-/*108*/ // char exit_url[0];	// URL that will open when EQ is exited
+/*012*/ uint32 entrysize; // Seen 15 00 00 00 (Laurion: 33 for extended entries)
+/*016*/ int32 entries[33]; //Varies. Seen ff ff ff ff, and 01 00 00 00 (Laurion: extended to 33 for entries[29]/[31])
+/*148*/ uint32 exit_url_length;	// Length of the exit_url string (0 for none)
+/*152*/ // char exit_url[0];	// URL that will open when EQ is exited
 };
 // Used by MercenaryListEntry_Struct
 struct MercenaryStance_Struct {
@@ -6044,8 +6063,8 @@ struct Membership_Setting_Struct
 
 struct Membership_Details_Struct
 {
-/*0000*/ uint32 membership_setting_count;	// Seen 66
-/*0016*/ Membership_Setting_Struct settings[66];
+/*0000*/ uint32 membership_setting_count;	// Seen 66 (Laurion: 96)
+/*0016*/ Membership_Setting_Struct settings[96];	// CRITICAL: Must be 96 for Laurion (was 66)
 /*0012*/ uint32 race_entry_count;	// Seen 15
 /*1044*/ Membership_Entry_Struct membership_races[15];
 /*0012*/ uint32 class_entry_count;	// Seen 15
@@ -6056,14 +6075,13 @@ struct Membership_Details_Struct
 /*0000*/ //char exit_url2[49];		// Upgrade to Gold Membership URL
 };
 
-struct ItemPreview_Struct
-{
-/*000*/	uint32	itemid;
-/*004*/	uint32	unknown004[3];
-/*016*/	uint32	slot;
-/*020*/	uint32	unknown020;
-/*024*/	uint16	slot2;
-/*026*/	uint8	unknown026[54];
+struct ItemPreview_Struct {
+/*0x00*/ uint32_t itemid;         // Item ID to preview
+/*0x04*/ uint32_t reserved1;       // Always 0
+/*0x08*/ uint32_t reserved2;       // Always 0
+/*0x0C*/ uint32_t marker;          // Always 0xFFFFFFFF
+/*0x10*/ uint64_t reserved3;       // Always 0
+/*0x18*/ uint16_t flags;           // 1 = enable preview
 };
 
 // Used by specific packets
@@ -6443,6 +6461,132 @@ struct BuylineItemDetails_Struct {
 	uint64      item_cost;
 	uint32      item_quantity;
 };
+
+// ============================================================================
+// LAURION'S SONG EXPANSION PACKETS
+// Reverse-engineered: December 2025
+// Add these structures BEFORE the final "#pragma pack()" at the end of the file
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// OP_WindowResponse (0x2B7C)
+// Direction: Client → Server
+// Size: 336 bytes
+// Purpose: Client acknowledgment when opening/closing windows
+// ----------------------------------------------------------------------------
+struct WindowResponse_Struct {
+/*0x000*/ uint32_t response_type;  // 1 = acknowledged/success, 0 = closed
+/*0x004*/ uint32_t reserved1;      // Always 0
+/*0x008*/ uint8_t  padding[328];   // Reserved for future use (all zeros)
+/*0x150*/ // Total: 336 bytes
+};
+
+// ----------------------------------------------------------------------------
+// OP_AABuy (0x349B)
+// Direction: Client ↔ Server (Bidirectional)
+// Size: 16 bytes
+// Purpose: AA ability purchase and queries
+// ----------------------------------------------------------------------------
+struct AABuyWindow_Struct {
+    uint32_t action;          // 4 bytes
+    uint32_t aa_id;           // 4 bytes
+    uint32_t parameter2;      // 4 bytes
+    uint32_t parameter3;      // 4 bytes
+};                            // Total: 16 bytes
+
+// ----------------------------------------------------------------------------
+// OP_DragonsHoard (0x6D0F)
+// Direction: Client → Server
+// Size: 4 bytes
+// Purpose: Dragon's Hoard storage interaction
+// ----------------------------------------------------------------------------
+// Client sends 4-byte request packets
+struct DragonsHoard_Request_Struct {
+/*0x00*/ uint32_t action;          // Action code:
+                                   //   0 = Open/query hoard
+                                   //   1 = Close hoard
+                                   //   2 = Deposit item
+                                   //   3 = Withdraw item
+/*0x04*/ // Total: 4 bytes
+};
+
+// Server sends 8-byte response packets with ownership status
+struct DragonsHoard_Response_Struct {
+/*0x00*/ uint32_t action;          // Action code (echo from request)
+/*0x04*/ uint32_t owned;           // Ownership status: 1 = owned/unlocked, 0 = not owned
+/*0x08*/ uint32_t max_slots;       // Maximum slots available (200 for Dragon's Hoard) - CLIENT READS FOR 0x23ec
+/*0x0C*/ uint32_t item_count;      // Current number of items stored in hoard
+/*0x10*/ // Total: 16 bytes
+};
+
+// Dragon's Hoard Slot Count Packet (action=2)
+// Binary Ninja: *(data_140e33f50 + 0x23ec) = packet[1] sets display slot count
+struct DragonsHoard_SlotCount_Struct {
+/*0x00*/ uint32_t action;          // Action 2 = slot count query/response
+/*0x04*/ uint32_t max_slots;       // Maximum slots available
+/*0x08*/ // Total: 8 bytes
+};
+
+// Feature Unlock Packet (Opcode 0x4451)
+// Used to unlock features like Dragon's Hoard (feature_id=0x1ec5fb)
+struct FeatureUnlock_Struct {
+/*0x00*/ uint8_t  header;            // Flags/header byte
+/*0x01*/ uint32_t count;             // Number of features to unlock
+/*0x05*/ // Followed by count repetitions of FeatureUnlock_Entry
+};
+
+struct FeatureUnlock_Entry {
+/*0x00*/ uint32_t feature_id;        // Feature ID (0x1ec5fb for Dragon's Hoard)
+/*0x04*/ uint32_t feature_count;     // Count (usually 1 = unlocked)
+/*0x08*/ // Total: 8 bytes per entry
+};
+
+// Legacy alias for compatibility
+typedef DragonsHoard_Request_Struct DragonsHoard_Struct;
+
+// ----------------------------------------------------------------------------
+// OP_PersonalDepot (0x41A2)
+// Direction: Client → Server
+// Size: 59 bytes (0x3B)
+// Purpose: Personal Tradeskill Depot storage interaction
+// ----------------------------------------------------------------------------
+// Client sends 59-byte request packets
+struct PersonalDepot_Request_Struct {
+/*0x00*/ uint32_t action;          // Action code: 0x00000000
+/*0x04*/ uint32_t unknown04;       // Seen: 0xBA3DB539
+/*0x08*/ uint32_t unknown08;       // Seen: 0x00000000
+/*0x0C*/ uint16_t unknown0C;       // Seen: 0x0003
+/*0x0E*/ uint16_t unknown0E;       // Seen: 0x0011
+/*0x10*/ uint16_t unknown10;       // Seen: 0x0064
+/*0x12*/ uint8_t  padding[33];     // All zeros (0x12-0x32 = 33 bytes)
+/*0x33*/ uint32_t unknown33;       // Seen: 0x6999001A (note: might be split)
+/*0x37*/ uint32_t unknown37;       // Seen: 0x00000069
+/*0x3B*/ // Total: 59 bytes
+};
+
+// Server sends 59-byte response packets with ownership flag
+struct PersonalDepot_Response_Struct {
+/*0x00*/ uint32_t action;          // Action code (echo from request)
+/*0x04*/ uint32_t owned;           // Ownership flag: 1 = owned/unlocked
+/*0x08*/ uint32_t max_slots;       // Maximum slots available (500 for Personal Depot)
+/*0x0C*/ uint32_t item_count;      // Current number of items stored
+/*0x10*/ uint16_t unknown10;       // Zeroed in response
+/*0x12*/ uint8_t  padding[33];     // All zeros
+/*0x33*/ uint32_t unknown33;       // Zeroed in response
+/*0x37*/ uint32_t unknown37;       // Zeroed in response
+/*0x3B*/ // Total: 59 bytes
+};
+
+// Personal Depot Slot Count Packet (action=2)
+// Same pattern as Dragon's Hoard - action=2 sets display slot count
+struct PersonalDepot_SlotCount_Struct {
+/*0x00*/ uint32_t action;          // Action 2 = slot count query/response
+/*0x04*/ uint32_t max_slots;       // Maximum slots available
+/*0x08*/ // Total: 8 bytes
+};
+
+// Legacy alias for compatibility
+typedef PersonalDepot_Request_Struct PersonalDepot_Struct;
 
 // Restore structure packing to default
 #pragma pack()

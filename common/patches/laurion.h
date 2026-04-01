@@ -21,11 +21,19 @@
 #define COMMON_LAURION_H
 
 #include "../struct_strategy.h"
+#include "../serialize_buffer.h"
+#include "../item_instance.h"
 
 class EQStreamIdentifier;
 
 namespace Laurion
 {
+
+	// Per-item size for Dragon's Hoard batch packet (59 header + 9 trail + 4 blob L + 186 blob = 258). Count + N×this = total payload.
+	static const size_t kDragonHoardItemDataSize = 258;
+
+	// Serialize one Dragon's Hoard item into buffer (no leading count). Used by SendDragonHoardItemList to build batch packet. Pad to kDragonHoardItemDataSize if needed.
+	void SerializeOneDragonHoardItem(SerializeBuffer& buffer, const EQ::ItemInstance* inst, int16 slot_id);
 
 	//these are the only public member of this namespace.
 	extern void Register(EQStreamIdentifier& into);

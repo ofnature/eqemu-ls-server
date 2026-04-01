@@ -94,11 +94,12 @@ const std::string &EQ::SayLinkEngine::GenerateLink()
 	generate_text();
 
 	if ((m_LinkBody.length() == EQ::constants::SAY_LINK_BODY_SIZE) && (m_LinkText.length() > 0)) {
-		m_Link.push_back(0x12);
-		m_Link.append(m_LinkBody);
-		m_Link.append(m_LinkText);
-		m_Link.push_back(0x12);
-	}
+        m_Link.push_back(0x12);      // 1. Start Marker
+        m_Link.append(m_LinkBody);   // 2. The Hex Code
+        m_Link.push_back(0x12);      // 3. THE MISSING SEPARATOR!
+        m_Link.append(m_LinkText);   // 4. The Readable Text
+        m_Link.push_back(0x12);      // 5. End Marker
+    }
 
 	if ((m_Link.length() == 0) || (m_Link.length() > (EQ::constants::SAY_LINK_MAXIMUM_SIZE))) {
 		m_Error = true;

@@ -235,7 +235,7 @@ struct ClientReward
 class Client : public Mob
 {
 public:
-	//pull in opcode mappings:
+	// pull in opcode mappings (Laurion 0x6D2D: Handle_OP_DragonsHoardClient in client_packet.h; [DH_RENAME_6D2D] was Handle_OP_DHUnknown6D2D)
 	#include "client_packet.h"
 
 	Client(EQStreamInterface * ieqs);
@@ -1120,6 +1120,10 @@ public:
 	void SendItemLink(const EQ::ItemInstance* inst, bool sendtoall=false);
 	void SendLootItemInPacket(const EQ::ItemInstance* inst, int16 slot_id);
 	void SendItemPacket(int16 slot_id, const EQ::ItemInstance* inst, ItemPacketType packet_type);
+	/** Send OP_ItemPacket for each item in Dragon's Hoard (Type=38, slots 5000-5199). Call after action=0. */
+	void SendDragonHoardItemList();
+	/** After DH item list: for duration_ms, log every client→server packet with hex (server-side capture). */
+	void StartClientIngressCaptureAfterDHItems(uint32 duration_ms = 15000);
 	bool IsValidSlot(uint32 slot);
 	bool IsBankSlot(uint32 slot);
 
@@ -1787,6 +1791,9 @@ public:
 
 	void SendHPUpdateMarquee();
 	void SendMembership();
+	void SendMembershipSettings();
+	void SendDragonHoardFeatureUnlock();
+	void SendDragonHoardSlotCounts();
 
 	void CheckRegionTypeChanges();
 
@@ -2177,6 +2184,12 @@ private:
 
 	void InterrogateInventory_(bool errorcheck, Client* requester, int16 head, int16 index, const EQ::ItemInstance* inst, const EQ::ItemInstance* parent, bool log, bool silent, bool &error, int depth);
 	bool InterrogateInventory_error(int16 head, int16 index, const EQ::ItemInstance* inst, const EQ::ItemInstance* parent, int depth);
+
+	/** If DH ingress capture window is active, log this packet and bump seq (called from HandlePacket). */
+	void TryLogIngressCapturePacket(const EQApplicationPacket *app);
+
+	uint32 m_client_ingress_capture_until_ms = 0;
+	uint32 m_client_ingress_capture_seq = 0;
 
 	uint8 client_max_level;
 

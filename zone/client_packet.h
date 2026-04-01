@@ -21,7 +21,10 @@
 	void Handle_Connect_OP_ZoneComplete(const EQApplicationPacket *app);
 	void Handle_Connect_OP_ZoneEntry(const EQApplicationPacket *app);
 	/* Connected opcode handlers*/
+	void Handle_0x0193(const EQApplicationPacket *app);
+	void Handle_0x01e7(const EQApplicationPacket *app);
 	void Handle_OP_AAAction(const EQApplicationPacket *app);
+	void Handle_OP_AABuy(const EQApplicationPacket *app);  // ← LAURION'S SONG - NEW
 	void Handle_OP_AcceptNewTask(const EQApplicationPacket *app);
 	void Handle_OP_AdventureInfoRequest(const EQApplicationPacket *app);
 	void Handle_OP_AdventureLeaderboardRequest(const EQApplicationPacket *app);
@@ -96,6 +99,17 @@
 	void Handle_OP_Disarm(const EQApplicationPacket *app);
 	void Handle_OP_DisarmTraps(const EQApplicationPacket *app);
 	void Handle_OP_DoGroupLeadershipAbility(const EQApplicationPacket *app);
+	void Handle_OP_DragonsHoard(const EQApplicationPacket *app);  // ← LAURION'S SONG - NEW
+	void Handle_OP_DragonHoardFeatureSetup(const EQApplicationPacket *app);  // ← LAURION'S SONG - Feature setup 0x687B (80 bytes)
+	void Handle_OP_DHUnknown3C92(const EQApplicationPacket *app);  // Laurion 0x3C92 unknown DH-related
+	void Handle_OP_DHUnknown6B80(const EQApplicationPacket *app);  // Laurion 0x6B80 unknown DH-related
+	// void Handle_OP_DHUnknown6D2D(const EQApplicationPacket *app);  // [DH_RENAME_6D2D] old name — Laurion 0x6D2D
+	void Handle_OP_DragonsHoardClient(const EQApplicationPacket *app);  // Laurion 0x6D2D (OP_DHUnknown6D2D)
+	void Handle_OP_DHUnknown7F65(const EQApplicationPacket *app);  // Laurion 0x7F65 unknown DH-related
+	void Handle_OP_FeatureSetup3(const EQApplicationPacket *app);  // ← LAURION'S SONG - CRITICAL: 0x3FE5 (16 bytes) slot counts
+	void Handle_OP_FeatureSetup4(const EQApplicationPacket *app);  // ← LAURION'S SONG - CRITICAL: 0x229C (2 bytes) Depot query
+	void Handle_OP_PersonalDepot(const EQApplicationPacket *app);  // ← LAURION'S SONG - NEW
+	void Handle_OP_PersonalDepotFeatureSetup(const EQApplicationPacket *app);  // ← LAURION'S SONG - Feature setup 0x90B9 (148 bytes)
 	void Handle_OP_DuelDecline(const EQApplicationPacket *app);
 	void Handle_OP_DuelAccept(const EQApplicationPacket *app);
 	void Handle_OP_DumpName(const EQApplicationPacket *app);
@@ -112,6 +126,7 @@
 	void Handle_OP_Emote(const EQApplicationPacket *app);
 	void Handle_OP_EndLootRequest(const EQApplicationPacket *app);
 	void Handle_OP_EnvDamage(const EQApplicationPacket *app);
+	void Handle_OP_EvolveItem(const EQApplicationPacket *app);
 	void Handle_OP_FaceChange(const EQApplicationPacket *app);
 	void Handle_OP_FeignDeath(const EQApplicationPacket *app);
 	void Handle_OP_FindPersonRequest(const EQApplicationPacket *app);
@@ -137,6 +152,7 @@
 	void Handle_OP_GMToggle(const EQApplicationPacket *app);
 	void Handle_OP_GMTraining(const EQApplicationPacket *app);
 	void Handle_OP_GMTrainSkill(const EQApplicationPacket *app);
+	void Handle_OP_GMTrainSkillConfirm(const EQApplicationPacket *app);
 	void Handle_OP_GMZoneRequest(const EQApplicationPacket *app);
 	void Handle_OP_GMZoneRequest2(const EQApplicationPacket *app);
 	void Handle_OP_GroupAcknowledge(const EQApplicationPacket *app);
@@ -158,41 +174,52 @@
 	void Handle_OP_GuildInvite(const EQApplicationPacket *app);
 	void Handle_OP_GuildInviteAccept(const EQApplicationPacket *app);
 	void Handle_OP_GuildLeader(const EQApplicationPacket *app);
+	void Handle_OP_GuildManageAdd(const EQApplicationPacket *app);
+	void Handle_OP_GuildManageRemove(const EQApplicationPacket *app);
+	void Handle_OP_GuildManageStatus(const EQApplicationPacket *app);
 	void Handle_OP_GuildManageBanker(const EQApplicationPacket *app);
 	void Handle_OP_GuildPeace(const EQApplicationPacket *app);
 	void Handle_OP_GuildPromote(const EQApplicationPacket *app);
 	void Handle_OP_GuildPublicNote(const EQApplicationPacket *app);
 	void Handle_OP_GuildRemove(const EQApplicationPacket *app);
 	void Handle_OP_GuildStatus(const EQApplicationPacket *app);
-	void Handle_OP_GuildTributeModifyBenefits(const EQApplicationPacket* app);
-	void Handle_OP_GuildTributeOptInOut(const EQApplicationPacket* app);
-	void Handle_OP_GuildTributeSaveActiveTributes(const EQApplicationPacket* app);
-	void Handle_OP_GuildTributeSelect(const EQApplicationPacket* app);
-	void Handle_OP_GuildTributeToggle(const EQApplicationPacket* app);
 	void Handle_OP_GuildUpdate(const EQApplicationPacket *app);
-	void Handle_OP_GuildTributeDonateItem(const EQApplicationPacket* app);
-	void Handle_OP_GuildTributeDonatePlat(const EQApplicationPacket* app);
+	void Handle_OP_GuildSelectTribute(const EQApplicationPacket *app);
+	void Handle_OP_GuildModifyBenefits(const EQApplicationPacket *app);
+	void Handle_OP_GuildTributeToggleReq(const EQApplicationPacket *app);
+	void Handle_OP_GuildOptInOut(const EQApplicationPacket *app);
+	void Handle_OP_GuildSaveActiveTributes(const EQApplicationPacket *app);
+	void Handle_OP_GuildTributeSelect(const EQApplicationPacket *app);
+	void Handle_OP_GuildTributeModifyBenefits(const EQApplicationPacket *app);
+	void Handle_OP_GuildTributeOptInOut(const EQApplicationPacket *app);
+	void Handle_OP_GuildTributeSaveActiveTributes(const EQApplicationPacket *app);
+	void Handle_OP_GuildTributeToggle(const EQApplicationPacket *app);
+	void Handle_OP_GuildTributeDonateItem(const EQApplicationPacket *app);
+	void Handle_OP_GuildTributeDonatePlat(const EQApplicationPacket *app);
 	void Handle_OP_GuildWar(const EQApplicationPacket *app);
-	void Handle_OP_Heartbeat(const EQApplicationPacket *app);
 	void Handle_OP_Hide(const EQApplicationPacket *app);
+	void Handle_OP_Heartbeat(const EQApplicationPacket *app);
 	void Handle_OP_HideCorpse(const EQApplicationPacket *app);
 	void Handle_OP_Ignore(const EQApplicationPacket *app);
 	void Handle_OP_Illusion(const EQApplicationPacket *app);
+	void Handle_OP_IncreaseStats(const EQApplicationPacket *app);
 	void Handle_OP_InspectAnswer(const EQApplicationPacket *app);
 	void Handle_OP_InspectMessageUpdate(const EQApplicationPacket *app);
 	void Handle_OP_InspectRequest(const EQApplicationPacket *app);
 	void Handle_OP_InstillDoubt(const EQApplicationPacket *app);
 	void Handle_OP_ItemLinkClick(const EQApplicationPacket *app);
-	void Handle_OP_ItemLinkResponse(const EQApplicationPacket *app);
 	void Handle_OP_ItemName(const EQApplicationPacket *app);
-	void Handle_OP_ItemPreview(const EQApplicationPacket *app);
+	void Handle_OP_ItemLinkResponse(const EQApplicationPacket *app);
+	void Handle_OP_ItemPreview(const EQApplicationPacket *app);  // ← LAURION'S SONG - NEW
+	void Handle_OP_ContainerItemInspect(const EQApplicationPacket *app);  // Laurion 0x609c DH/container item inspect
 	void Handle_OP_ItemVerifyRequest(const EQApplicationPacket *app);
 	void Handle_OP_Jump(const EQApplicationPacket *app);
 	void Handle_OP_KeyRing(const EQApplicationPacket *app);
 	void Handle_OP_KickPlayers(const EQApplicationPacket *app);
+	void Handle_OP_KnowledgeBase(const EQApplicationPacket *app);
 	void Handle_OP_LDoNButton(const EQApplicationPacket *app);
-	void Handle_OP_LDoNDisarmTraps(const EQApplicationPacket *app);
 	void Handle_OP_LDoNInspect(const EQApplicationPacket *app);
+	void Handle_OP_LDoNDisarmTraps(const EQApplicationPacket *app);
 	void Handle_OP_LDoNOpen(const EQApplicationPacket *app);
 	void Handle_OP_LDoNPickLock(const EQApplicationPacket *app);
 	void Handle_OP_LDoNSenseTraps(const EQApplicationPacket *app);
@@ -201,6 +228,7 @@
 	void Handle_OP_LeaveBoat(const EQApplicationPacket *app);
 	void Handle_OP_LFGCommand(const EQApplicationPacket *app);
 	void Handle_OP_LFGGetMatchesRequest(const EQApplicationPacket *app);
+	void Handle_OP_LFGResponse(const EQApplicationPacket *app);
 	void Handle_OP_LFGuild(const EQApplicationPacket *app);
 	void Handle_OP_LFPCommand(const EQApplicationPacket *app);
 	void Handle_OP_LFPGetMatchesRequest(const EQApplicationPacket *app);
@@ -240,6 +268,7 @@
 	void Handle_OP_PlayerStateAdd(const EQApplicationPacket *app);
 	void Handle_OP_PlayerStateRemove(const EQApplicationPacket *app);
 	void Handle_OP_PickPocket(const EQApplicationPacket *app);
+	void Handle_OP_PickZone(const EQApplicationPacket *app);
 	void Handle_OP_PopupResponse(const EQApplicationPacket *app);
 	void Handle_OP_PotionBelt(const EQApplicationPacket *app);
 	void Handle_OP_PurchaseLeadershipAA(const EQApplicationPacket *app);
@@ -305,6 +334,7 @@
 	void Handle_OP_TradeRequestAck(const EQApplicationPacket *app);
 	void Handle_OP_TraderShop(const EQApplicationPacket *app);
 	void Handle_OP_TradeSkillCombine(const EQApplicationPacket *app);
+	void Handle_OP_TradeSkillRecipeInspect(const EQApplicationPacket* app);
 	void Handle_OP_Translocate(const EQApplicationPacket *app);
 	void Handle_OP_TributeItem(const EQApplicationPacket *app);
 	void Handle_OP_TributeMoney(const EQApplicationPacket *app);
@@ -316,6 +346,7 @@
 	void Handle_OP_VoiceMacroIn(const EQApplicationPacket *app);
 	void Handle_OP_WearChange(const EQApplicationPacket *app);
 	void Handle_OP_WhoAllRequest(const EQApplicationPacket *app);
+	void Handle_OP_WindowResponse(const EQApplicationPacket *app);  // ← LAURION'S SONG - NEW
 	void Handle_OP_XTargetAutoAddHaters(const EQApplicationPacket *app);
 	void Handle_OP_XTargetOpen(const EQApplicationPacket *app);
 	void Handle_OP_XTargetRequest(const EQApplicationPacket *app);

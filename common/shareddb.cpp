@@ -428,6 +428,154 @@ bool SharedDatabase::DeleteSharedBankSlot(uint32 char_id, int16 slot_id) {
     return true;
 }
 
+// Dragon's Hoard (Laurion's Song). [DH_SERIAL_FIX_ALL] All SQL that binds dragonhoard_items.serial uses %llu and (unsigned long long) for full uint64 (e.g. Windows).
+uint32 SharedDatabase::GetDragonHoardCount(uint32 account_id)
+{
+	const std::string query = StringFormat("SELECT COUNT(*) FROM dragonhoard_items WHERE account_id = %u", account_id);
+	auto results = QueryDatabase(query);
+	if (!results.Success() || !results.RowCount()) return 0;
+	auto row = results.begin();
+	return static_cast<uint32>(Strings::ToUnsignedInt(row[0]));
+}
+
+int16 SharedDatabase::GetNextDragonHoardSlot(uint32 account_id)
+{
+	// Find first gap or use 0 if empty
+	for (int16 slot = 0; slot < 200; slot++) {
+		const std::string q = StringFormat("SELECT 1 FROM dragonhoard_items WHERE account_id = %u AND slot_id = %d", account_id, slot);
+		auto res = QueryDatabase(q);
+		if (res.Success() && res.RowCount() == 0) return slot;
+	}
+	return -1;
+}
+
+bool SharedDatabase::SaveDragonHoardItem(uint32 account_id, int16 slot_id, const EQ::ItemInstance *inst)
+{
+	if (!inst || !inst->GetItem()) return false;
+	uint32 aug[EQ::invaug::SOCKET_COUNT] = { 0 };
+	if (inst->IsClassCommon()) {
+		for (int i = EQ::invaug::SOCKET_BEGIN; i <= EQ::invaug::SOCKET_END; i++) {
+			const EQ::ItemInstance *aug_inst = inst->GetItem(i);
+			aug[i] = (aug_inst && aug_inst->GetItem()) ? aug_inst->GetItem()->ID : 0;
+		}
+	}
+	int16 charges = (inst->GetCharges() >= 0) ? inst->GetCharges() : 0x7FFF;
+	uint64 serial = static_cast<uint64>(inst->GetSerialNumber());
+	std::string custom_data = inst->GetCustomDataString();
+	const std::string query = StringFormat(
+		"REPLACE INTO dragonhoard_items (account_id, slot_id, item_id, charges, serial, augslot1, augslot2, augslot3, augslot4, augslot5, augslot6, custom_data) "
+		"VALUES (%u, %d, %u, %d, %llu, %u, %u, %u, %u, %u, %u, '%s')",
+		account_id, slot_id, inst->GetItem()->ID, charges, (unsigned long long)serial,
+		aug[0], aug[1], aug[2], aug[3], aug[4], aug[5], Strings::Escape(custom_data).c_str());
+	return QueryDatabase(query).Success();
+}
+
+bool SharedDatabase::DeleteDragonHoardItemBySerial(uint32 account_id, uint64 serial)
+{
+	const std::string query = StringFormat("DELETE FROM dragonhoard_items WHERE account_id = %u AND serial = %llu", account_id, (unsigned long long)serial);
+	return QueryDatabase(query).Success();
+}
+
+bool SharedDatabase::UpdateDragonHoardCharges(uint32 account_id, uint64 serial, int16 new_charges)
+{
+	if (new_charges <= 0) {
+		return DeleteDragonHoardItemBySerial(account_id, serial);
+	}
+	const std::string query = StringFormat(
+		"UPDATE dragonhoard_items SET charges = %d WHERE account_id = %u AND serial = %llu",
+		new_charges, account_id, (unsigned long long)serial);
+	return QueryDatabase(query).Success();
+}
+
+EQ::ItemInstance *SharedDatabase::GetDragonHoardItemBySerial(uint32 account_id, uint64 serial)
+{
+	// [DH_SERIAL_FIX_ALL] %llu + unsigned long long: full uint64 in SQL on Windows (was %lu truncating high dword).
+	const std::string query = StringFormat(
+		"SELECT slot_id, item_id, charges, serial, augslot1, augslot2, augslot3, augslot4, augslot5, augslot6, custom_data FROM dragonhoard_items WHERE account_id = %u AND serial = %llu",
+		account_id, (unsigned long long)serial);
+	auto results = QueryDatabase(query);
+	if (!results.Success() || !results.RowCount()) return nullptr;
+	auto row = results.begin();
+	uint32 item_id = Strings::ToUnsignedInt(row[1]);
+	int16 charges = static_cast<int16>(Strings::ToInt(row[2]));
+	uint32 aug[6];
+	for (int i = 0; i < 6; i++) aug[i] = Strings::ToUnsignedInt(row[4 + i]);
+	const EQ::ItemData *item = GetItem(item_id);
+	if (!item) return nullptr;
+	EQ::ItemInstance *inst = CreateBaseItem(item, charges);
+	if (!inst) return nullptr;
+	inst->SetSerialNumber(static_cast<int32>(Strings::ToUnsignedBigInt(row[3])));
+	if (inst->IsClassCommon()) {
+		for (int i = EQ::invaug::SOCKET_BEGIN; i <= EQ::invaug::SOCKET_END; i++) {
+			if (aug[i]) inst->PutAugment(this, i, aug[i]);
+		}
+	}
+	if (row[10])
+		inst->SetCustomDataString(std::string(row[10]));
+	return inst;
+}
+
+EQ::ItemInstance *SharedDatabase::GetDragonHoardItemBySlot(uint32 account_id, int16 slot_id)
+{
+	if (slot_id < 0 || slot_id > 199) return nullptr;
+	const std::string query = StringFormat(
+		"SELECT slot_id, item_id, charges, serial, augslot1, augslot2, augslot3, augslot4, augslot5, augslot6, custom_data FROM dragonhoard_items WHERE account_id = %u AND slot_id = %d",
+		account_id, (int)slot_id);
+	auto results = QueryDatabase(query);
+	if (!results.Success() || !results.RowCount()) return nullptr;
+	auto row = results.begin();
+	uint32 item_id = Strings::ToUnsignedInt(row[1]);
+	int16 charges = static_cast<int16>(Strings::ToInt(row[2]));
+	uint32 aug[6];
+	for (int i = 0; i < 6; i++) aug[i] = Strings::ToUnsignedInt(row[4 + i]);
+	const EQ::ItemData *item = GetItem(item_id);
+	if (!item) return nullptr;
+	EQ::ItemInstance *inst = CreateBaseItem(item, charges);
+	if (!inst) return nullptr;
+	inst->SetSerialNumber(static_cast<int32>(Strings::ToUnsignedBigInt(row[3])));
+	if (inst->IsClassCommon()) {
+		for (int i = EQ::invaug::SOCKET_BEGIN; i <= EQ::invaug::SOCKET_END; i++) {
+			if (aug[i]) inst->PutAugment(this, i, aug[i]);
+		}
+	}
+	if (row[10])
+		inst->SetCustomDataString(std::string(row[10]));
+	return inst;
+}
+
+void SharedDatabase::GetDragonHoardItems(uint32 account_id, void (*fn)(int16 slot_id, EQ::ItemInstance *inst, void *ctx), void *ctx)
+{
+	if (!fn) return;
+	const std::string query = StringFormat(
+		"SELECT slot_id, item_id, charges, serial, augslot1, augslot2, augslot3, augslot4, augslot5, augslot6, custom_data FROM dragonhoard_items WHERE account_id = %u ORDER BY slot_id",
+		account_id);
+	auto results = QueryDatabase(query);
+	if (!results.Success()) return;
+	// [DH_LOG_CLEANUP] Per-enumeration row count log disabled.
+	// Log(Logs::General, Logs::Error, "[DH_ITEMS] GetDragonHoardItems: total rows=%u", (unsigned)results.RowCount());
+	for (auto row : results) {
+		int slot_id_raw = Strings::ToInt(row[0]);
+		if (slot_id_raw < 0 || slot_id_raw > 199) continue;
+		int16 slot_id = static_cast<int16>(slot_id_raw);
+		uint32 item_id = Strings::ToUnsignedInt(row[1]);
+		int16 charges = static_cast<int16>(Strings::ToInt(row[2]));
+		uint32 aug[6];
+		for (int i = 0; i < 6; i++) aug[i] = Strings::ToUnsignedInt(row[4 + i]);
+		const EQ::ItemData *item = GetItem(item_id);
+		if (!item) continue;
+		EQ::ItemInstance *inst = CreateBaseItem(item, charges);
+		if (!inst) continue;
+		inst->SetSerialNumber(static_cast<int32>(Strings::ToUnsignedBigInt(row[3])));
+		if (inst->IsClassCommon()) {
+			for (int i = EQ::invaug::SOCKET_BEGIN; i <= EQ::invaug::SOCKET_END; i++) {
+				if (aug[i]) inst->PutAugment(this, i, aug[i]);
+			}
+		}
+		if (row[10])
+			inst->SetCustomDataString(std::string(row[10]));
+		fn(slot_id, inst, ctx);
+	}
+}
 
 int32 SharedDatabase::GetSharedPlatinum(uint32 account_id)
 {

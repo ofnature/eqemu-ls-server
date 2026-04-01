@@ -107,6 +107,40 @@ enum class NameApprovalResponse : int {
 	HeadStartNoOoW = 5, // string ID 6863, head start failed due to not owning OoW
 };
 
+// PACKET DUMP HELPER FOR STRUCT DEBUGGING
+void DumpPacketHex(const EQApplicationPacket *app, const char* label) {
+    if (!app || !app->pBuffer) return;
+    
+    Log(Logs::General, Logs::Error, "[PACKET_DUMP] %s - Size: %d bytes", label, app->size);
+    Log(Logs::General, Logs::Error, "[PACKET_DUMP] Opcode: %d (0x%04X)", 
+        app->GetOpcode(), app->GetProtocolOpcode());
+    
+    // Dump in 16-byte rows with hex and ASCII
+    for (int i = 0; i < app->size; i += 16) {
+        std::string hex = "";
+        std::string ascii = "";
+        
+        for (int j = 0; j < 16 && (i + j) < app->size; j++) {
+            unsigned char byte = ((unsigned char*)app->pBuffer)[i + j];
+            
+            char hexbuf[4];
+            snprintf(hexbuf, sizeof(hexbuf), "%02X ", byte);
+            hex += hexbuf;
+            
+            if (byte >= 32 && byte <= 126) {
+                ascii += (char)byte;
+            } else {
+                ascii += '.';
+            }
+        }
+        
+        Log(Logs::General, Logs::Error, "[PACKET_DUMP] %04X: %-48s | %s", 
+            i, hex.c_str(), ascii.c_str());
+    }
+    
+    Log(Logs::General, Logs::Error, "[PACKET_DUMP] --- END DUMP ---");
+}
+
 Client::Client(EQStreamInterface* ieqs)
 :	autobootup_timeout(RuleI(World, ZoneAutobootTimeoutMS)),
 	connect(1000),
@@ -220,15 +254,27 @@ void Client::SendExpansionInfo() {
 	auto outapp = new EQApplicationPacket(OP_ExpansionInfo, sizeof(ExpansionInfo_Struct));
 	ExpansionInfo_Struct *eis = (ExpansionInfo_Struct*)outapp->pBuffer;
 
+	LogError("[EXPANSION_DEBUG] SendExpansionInfo called");
+	LogError("[EXPANSION_DEBUG] Client Version: {}", eqs ? static_cast<int>(eqs->ClientVersion()) : -1);
+	LogError("[EXPANSION_DEBUG] CharacterSelectExpansionSettings rule: {}", RuleI(World, CharacterSelectExpansionSettings));
+	LogError("[EXPANSION_DEBUG] UseClientBasedExpansionSettings rule: {}", RuleB(World, UseClientBasedExpansionSettings));
+	LogError("[EXPANSION_DEBUG] ExpansionSettings rule: {}", RuleI(World, ExpansionSettings));
+
 	if (RuleI(World, CharacterSelectExpansionSettings) != -1) {
 		eis->Expansions = RuleI(World, CharacterSelectExpansionSettings);
+		LogError("[EXPANSION_DEBUG] Using CharacterSelectExpansionSettings: {}", eis->Expansions);
 	}
 	else if (RuleB(World, UseClientBasedExpansionSettings)) {
 		eis->Expansions = EQ::expansions::ConvertClientVersionToExpansionsMask(eqs->ClientVersion());
+		LogError("[EXPANSION_DEBUG] Using client-based expansion mask: {}", eis->Expansions);
 	}
 	else {
 		eis->Expansions = RuleI(World, ExpansionSettings);
+		LogError("[EXPANSION_DEBUG] Using ExpansionSettings rule: {}", eis->Expansions);
 	}
+
+	LogError("[EXPANSION_DEBUG] Final Expansions value: {} (binary: {:b})", eis->Expansions, eis->Expansions);
+	LogError("[EXPANSION_DEBUG] Packet size: {}", outapp->size);
 
 	QueuePacket(outapp);
 	safe_delete(outapp);
@@ -300,7 +346,7 @@ void Client::SendMembership() {
 	mc->membership = 2;				//Hardcode to gold for now. We don't use anything else.
 	mc->races = 0x1ffff;			// Available Races (4110 for silver)
 	mc->classes = 0x1ffff;			// Available Classes (4614 for silver) - Was 0x101ffff
-	mc->entrysize = 21;				// Number of membership setting entries below
+	mc->entrysize = 33;				// Number of membership setting entries (Laurion extended to 33)
 	mc->entries[0] = 0xffffffff;	// Max AA Restriction
 	mc->entries[1] = 0xffffffff;	// Max Level Restriction
 	mc->entries[2] = 0xffffffff;	// Max Char Slots per Account (not used by client?)
@@ -322,6 +368,19 @@ void Client::SendMembership() {
 	mc->entries[18] = 1;			// 0 for Silver
 	mc->entries[19] = 0xffffffff;	// 0 for Silver
 	mc->entries[20] = 0xffffffff;	// 0 for Silver
+	// Laurion's Song extended entries (21-32)
+	mc->entries[21] = 0;			// Unknown
+	mc->entries[22] = 0;			// Unknown
+	mc->entries[23] = 0;			// Unknown
+	mc->entries[24] = 0;			// Unknown
+	mc->entries[25] = 0;			// Unknown
+	mc->entries[26] = 0;			// Unknown
+	mc->entries[27] = 0;			// Unknown
+	mc->entries[28] = 0;			// Unknown
+	mc->entries[29] = 200;			// Dragon's Hoard capacity (account-bound)
+	mc->entries[30] = 0;			// Unknown
+	mc->entries[31] = 500;			// Personal Tradeskill Depot capacity (account-bound)
+	mc->entries[32] = 0;			// Unknown
 	mc->exit_url_length = 0;
 	//mc->exit_url = 0; // Used on Live: "http://www.everquest.com/free-to-play/exit-silver"
 
@@ -333,19 +392,40 @@ void Client::SendMembershipSettings() {
 	auto outapp = new EQApplicationPacket(OP_SendMembershipDetails, sizeof(Membership_Details_Struct));
 	Membership_Details_Struct* mds = (Membership_Details_Struct*)outapp->pBuffer;
 
-	mds->membership_setting_count = 66;
-	int32 gold_settings[22] = {-1,-1,-1,-1,-1,-1,1,1,1,-1,1,-1,-1,1,1,1,1,1,1,-1,-1,0};
-	uint32 entry_count = 0;
-	for (int setting_id=0; setting_id < 22; setting_id++)
-	{
-		for (int setting_index=0; setting_index < 3; setting_index++)
-		{
+	// CRITICAL: Must send 96 settings (not 66!) including Dragon's Hoard/Depot slot counts
+	// Format: {setting_index, setting_id, setting_value}
+	int32 settings[96][3] = {
+		{ 0, 0, 200 },  { 1, 0, 500 }, { 0, 1, -1 },   { 1, 1, -1 },   // Dragon's Hoard=200, Depot=500 (GOLD tier)
+		{ 0, 2, 2 },    { 2, 0, -1 },   { 3, 0, -1 },   { 1, 2, 4 },
+		{ 0, 3, 1 },    { 2, 1, -1 },   { 3, 1, -1 },   { 1, 3, 1 },
+		{ 0, 4, -1 },   { 2, 2, -1 },   { 3, 2, -1 },   { 1, 4, -1 },
+		{ 0, 5, -1 },   { 2, 3, -1 },   { 3, 3, -1 },   { 1, 5, -1 },
+		{ 0, 6, 0 },    { 2, 4, -1 },   { 3, 4, -1 },   { 1, 6, 0 },
+		{ 0, 7, 1 },    { 2, 5, -1 },   { 3, 5, -1 },   { 1, 7, 1 },
+		{ 0, 8, 1 },    { 2, 6, 1 },    { 3, 6, 1 },    { 1, 8, 1 },
+		{ 0, 9, 5 },    { 2, 7, 1 },    { 3, 7, 1 },    { 1, 9, 5 },
+		{ 0, 10, 0 },   { 2, 8, 1 },    { 3, 8, 1 },    { 0, 11, -1 },
+		{ 1, 10, 1 },   { 2, 9, -1 },   { 3, 9, -1 },   { 0, 12, -1 },
+		{ 1, 11, -1 },  { 2, 10, 1 },   { 3, 10, 1 },   { 0, 13, 0 },
+		{ 1, 12, -1 },  { 2, 11, -1 },  { 3, 11, -1 },  { 0, 14, 0 },
+		{ 1, 13, 1 },   { 2, 12, -1 },  { 3, 12, -1 },  { 0, 15, 0 },
+		{ 1, 14, 0 },   { 2, 13, 1 },   { 3, 13, 1 },   { 0, 16, 0 },
+		{ 1, 15, 0 },   { 2, 14, 1 },   { 3, 14, 1 },   { 0, 17, 0 },
+		{ 1, 16, 1 },   { 2, 15, 1 },   { 3, 15, 1 },   { 0, 18, 0 },
+		{ 1, 17, 0 },   { 2, 16, 1 },   { 3, 16, 1 },   { 0, 19, 0 },
+		{ 1, 18, 0 },   { 2, 17, 1 },   { 3, 17, 1 },   { 0, 20, 0 },
+		{ 1, 19, 0 },   { 2, 18, 1 },   { 3, 18, 1 },   { 0, 21, 0 },
+		{ 1, 20, 0 },   { 2, 19, -1 },  { 3, 19, -1 },  { 0, 22, 0 },
+		{ 1, 21, 0 },   { 2, 20, -1 },  { 3, 20, -1 },  { 2, 21, 0 },
+		{ 0, 23, 0 },   { 1, 22, 0 },   { 3, 21, 0 },   { 2, 22, 0 },
+		{ 1, 23, 0 },   { 3, 22, 0 },   { 2, 23, 0 },   { 3, 23, 0 }
+	};
 
-			mds->settings[entry_count].setting_index = setting_index;
-			mds->settings[entry_count].setting_id = setting_id;
-			mds->settings[entry_count].setting_value = gold_settings[setting_id];
-			entry_count++;
-		}
+	mds->membership_setting_count = 96;  // CRITICAL: Was 66, should be 96!
+	for (int i = 0; i < 96; ++i) {
+		mds->settings[i].setting_index = settings[i][0];
+		mds->settings[i].setting_id = settings[i][1];
+		mds->settings[i].setting_value = settings[i][2];
 	}
 
 	mds->race_entry_count = 15;
@@ -751,6 +831,10 @@ bool Client::HandleCharacterCreatePacket(const EQApplicationPacket *app) {
 	}
 
 	CharCreate_Struct *cc = (CharCreate_Struct*)app->pBuffer;
+	
+	// Note: CharCreate_Struct has been updated for Laurion's Song with proper padding
+	// Stats now correctly read from offset 132 instead of 128
+	
 	if(OPCharCreate(char_name, cc) == false) {
 		database.DeleteCharacter(char_name);
 		auto outapp = new EQApplicationPacket(OP_ApproveName, 1);
@@ -1056,15 +1140,76 @@ bool Client::HandleEnterWorldPacket(const EQApplicationPacket *app) {
 }
 
 bool Client::HandleDeleteCharacterPacket(const EQApplicationPacket *app) {
-
-	uint32 char_acct_id = database.GetAccountIDByChar((char*)app->pBuffer);
-	if(char_acct_id == GetAccountID()) {
-		LogInfo("Delete character: [{}]", (const char*)app->pBuffer);
-		database.DeleteCharacter((char *)app->pBuffer);
-		SendCharInfo();
-	}
-
-	return true;
+    Log(Logs::General, Logs::Error, "[DELETE] HandleDeleteCharacterPacket called");
+    
+    // Validate packet
+    if (!app || !app->pBuffer) {
+        Log(Logs::General, Logs::Error, "[DELETE] ERROR: Null packet or buffer");
+        return false;
+    }
+    
+    Log(Logs::General, Logs::Error, "[DELETE] Packet size: %d bytes", app->size);
+    
+    // Laurion's Song sends 68 bytes, adjust validation
+    if (app->size == 0 || app->size > 128) {
+        Log(Logs::General, Logs::Error, "[DELETE] ERROR: Invalid packet size: %d", app->size);
+        return false;
+    }
+    
+    // Safely extract and validate character name
+    char char_name[128];
+    memset(char_name, 0, sizeof(char_name));
+    
+    // Copy with bounds checking - use full packet size
+    size_t copy_len = (app->size < 127) ? app->size : 127;
+    memcpy(char_name, app->pBuffer, copy_len);
+    char_name[127] = '\0'; // Ensure null termination
+    
+    Log(Logs::General, Logs::Error, "[DELETE] Extracted character name: [%s]", char_name);
+    
+    // Validate the character name contains only valid characters
+    bool valid_name = false;
+    for (size_t i = 0; i < strlen(char_name); i++) {
+        char c = char_name[i];
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+            valid_name = true;
+        } else if (c == '\0') {
+            break;
+        } else {
+            Log(Logs::General, Logs::Error, "[DELETE] ERROR: Invalid character in name at position %zu (char: %d)", i, (int)c);
+            return false;
+        }
+    }
+    
+    if (!valid_name || strlen(char_name) == 0) {
+        Log(Logs::General, Logs::Error, "[DELETE] ERROR: Invalid or empty character name");
+        return false;
+    }
+    
+    // Verify ownership
+    uint32 char_acct_id = database.GetAccountIDByChar(char_name);
+    Log(Logs::General, Logs::Error, "[DELETE] Character account ID: %d | My account ID: %d", 
+        char_acct_id, GetAccountID());
+    
+    if (char_acct_id == 0) {
+        Log(Logs::General, Logs::Error, "[DELETE] ERROR: Character [%s] not found in database", char_name);
+        return false;
+    }
+    
+    if (char_acct_id != GetAccountID()) {
+        Log(Logs::General, Logs::Error, "[DELETE] ERROR: Account mismatch! Character [%s] belongs to account %d, not %d", 
+            char_name, char_acct_id, GetAccountID());
+        return false;
+    }
+    
+    // Delete the character
+    Log(Logs::General, Logs::Error, "[DELETE] SUCCESS: Deleting character [%s] for account %d", 
+        char_name, GetAccountID());
+    database.DeleteCharacter(char_name);
+    SendCharInfo();
+    Log(Logs::General, Logs::Error, "[DELETE] Delete complete, character list refreshed");
+    
+    return true;
 }
 
 bool Client::HandleZoneChangePacket(const EQApplicationPacket *app) {
@@ -1079,8 +1224,14 @@ bool Client::HandleZoneChangePacket(const EQApplicationPacket *app) {
 bool Client::HandlePacket(const EQApplicationPacket *app) {
 
 	EmuOpcode opcode = app->GetOpcode();
-
+	
 	auto o = eqs->GetOpcodeManager();
+	
+	// Verbose logging for debugging - shows all opcodes with protocol hex
+	uint16 protocol_opcode = app->GetProtocolOpcode();
+	Log(Logs::General, Logs::Error, "[OPCODE_TRACE] EmuOpcode: %d (%s) | Protocol: 0x%04X | Size: %d", 
+		opcode, OpcodeManager::EmuToName(opcode), protocol_opcode, app->size);
+	
 	LogPacketClientServer(
 		"[{}] [{:#06x}] Size [{}] {}",
 		OpcodeManager::EmuToName(app->GetOpcode()),
@@ -1110,6 +1261,13 @@ bool Client::HandlePacket(const EQApplicationPacket *app) {
 	else if (opcode == OP_AckPacket) {
 		return true;
 	}
+	
+	// LAURION'S SONG HARDCODED FIX - ACTIVE
+	// The opcode file isn't loading 0x67D7 as OP_DeleteCharacter, so we catch it here
+	if (opcode == OP_Unknown && app->GetProtocolOpcode() == 0x67D7) {
+		Log(Logs::General, Logs::Error, "[LAURION_HARDCODE] Catching unmapped delete opcode 0x67D7");
+		return HandleDeleteCharacterPacket(app);
+	}
 
 	switch(opcode)
 	{
@@ -1132,6 +1290,7 @@ bool Client::HandlePacket(const EQApplicationPacket *app) {
 		}
 		case OP_ApproveName: //Name approval
 		{
+			DumpPacketHex(app, "OP_ApproveName");
 			return HandleNameApprovalPacket(app);
 		}
 		case OP_RandomNameGenerator:
@@ -1141,18 +1300,22 @@ bool Client::HandlePacket(const EQApplicationPacket *app) {
 		case OP_CharacterCreateRequest:
 		{
 			// New OpCode in SoF
+			DumpPacketHex(app, "OP_CharacterCreateRequest");
 			return HandleCharacterCreateRequestPacket(app);
 		}
 		case OP_CharacterCreate: //Char create
 		{
+			DumpPacketHex(app, "OP_CharacterCreate");
 			return HandleCharacterCreatePacket(app);
 		}
 		case OP_EnterWorld: // Enter world
 		{
+			DumpPacketHex(app, "OP_EnterWorld");
 			return HandleEnterWorldPacket(app);
 		}
 		case OP_DeleteCharacter:
 		{
+			Log(Logs::General, Logs::Error, "[DELETE_TRACE] OP_DeleteCharacter case triggered");
 			return HandleDeleteCharacterPacket(app);
 		}
 		case OP_WorldComplete:
@@ -1686,6 +1849,25 @@ bool Client::OPCharCreate(char *name, CharCreate_Struct *cc)
 	);
 
 	in.s_addr = GetIP();
+	
+	// DETAILED STAT DEBUG LOGGING
+	Log(Logs::General, Logs::Error, "[CHAR_CREATE_DEBUG] === RAW STAT VALUES FROM PACKET ===");
+	Log(Logs::General, Logs::Error, "[CHAR_CREATE_DEBUG] STR: %u (offset: %zu bytes from start)", 
+		cc->STR, offsetof(CharCreate_Struct, STR));
+	Log(Logs::General, Logs::Error, "[CHAR_CREATE_DEBUG] STA: %u (offset: %zu bytes from start)", 
+		cc->STA, offsetof(CharCreate_Struct, STA));
+	Log(Logs::General, Logs::Error, "[CHAR_CREATE_DEBUG] AGI: %u (offset: %zu bytes from start)", 
+		cc->AGI, offsetof(CharCreate_Struct, AGI));
+	Log(Logs::General, Logs::Error, "[CHAR_CREATE_DEBUG] DEX: %u (offset: %zu bytes from start)", 
+		cc->DEX, offsetof(CharCreate_Struct, DEX));
+	Log(Logs::General, Logs::Error, "[CHAR_CREATE_DEBUG] WIS: %u (offset: %zu bytes from start)", 
+		cc->WIS, offsetof(CharCreate_Struct, WIS));
+	Log(Logs::General, Logs::Error, "[CHAR_CREATE_DEBUG] INT: %u (offset: %zu bytes from start)", 
+		cc->INT, offsetof(CharCreate_Struct, INT));
+	Log(Logs::General, Logs::Error, "[CHAR_CREATE_DEBUG] CHA: %u (offset: %zu bytes from start)", 
+		cc->CHA, offsetof(CharCreate_Struct, CHA));
+	Log(Logs::General, Logs::Error, "[CHAR_CREATE_DEBUG] Stats Sum: %u", stats_sum);
+	Log(Logs::General, Logs::Error, "[CHAR_CREATE_DEBUG] CharCreate_Struct size: %zu bytes", sizeof(CharCreate_Struct));
 
 	LogInfo(
 		"Character creation request from [{}] LS [{}] [{}] [{}]",

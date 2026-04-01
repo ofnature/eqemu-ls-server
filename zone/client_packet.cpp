@@ -19,6 +19,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "../common/eqemu_logsys.h"
 #include "../common/opcodemgr.h"
 #include "../common/raid.h"
+#include "../common/packet_dump.h"
 
 #include <iomanip>
 #include <iostream>
@@ -98,6 +99,18 @@ void MapOpcodes()
 	ConnectingOpcodes[OP_ClientError] = &Client::Handle_Connect_OP_ClientError;
 	ConnectingOpcodes[OP_ClientReady] = &Client::Handle_Connect_OP_ClientReady;
 	ConnectingOpcodes[OP_ClientUpdate] = &Client::Handle_Connect_OP_ClientUpdate;
+	ConnectingOpcodes[OP_DragonsHoard] = &Client::Handle_OP_DragonsHoard;  // Client queries during zone-in
+	ConnectingOpcodes[OP_DragonHoardFeatureSetup] = &Client::Handle_OP_DragonHoardFeatureSetup;  // Feature setup 80 bytes
+	ConnectingOpcodes[OP_DragonHoardKeepAlive] = &Client::Handle_OP_DragonHoardFeatureSetup;    // 0x706A DH heartbeat/keepalive (82 bytes)
+	ConnectingOpcodes[OP_DHUnknown3C92] = &Client::Handle_OP_DHUnknown3C92;
+	ConnectingOpcodes[OP_DHUnknown6B80] = &Client::Handle_OP_DHUnknown6B80;
+	// ConnectingOpcodes[OP_DHUnknown6D2D] = &Client::Handle_OP_DHUnknown6D2D;  // [DH_RENAME_6D2D] old handler name
+	ConnectingOpcodes[OP_DHUnknown6D2D] = &Client::Handle_OP_DragonsHoardClient;
+	ConnectingOpcodes[OP_DHUnknown7F65] = &Client::Handle_OP_DHUnknown7F65;
+	ConnectingOpcodes[OP_FeatureSetup3] = &Client::Handle_OP_FeatureSetup3;  // CRITICAL: 16-byte slot count packet (0x3FE5)
+	ConnectingOpcodes[OP_FeatureSetup4] = &Client::Handle_OP_FeatureSetup4;  // CRITICAL: 2-byte Tradeskill Depot query (0x229C)
+	ConnectingOpcodes[OP_PersonalDepot] = &Client::Handle_OP_PersonalDepot;  // Client queries during zone-in
+	ConnectingOpcodes[OP_PersonalDepotFeatureSetup] = &Client::Handle_OP_PersonalDepotFeatureSetup;  // Feature setup 148 bytes
 	ConnectingOpcodes[OP_GetGuildsList] = &Client::Handle_OP_GetGuildsList; // temporary hack
 	ConnectingOpcodes[OP_ReqClientSpawn] = &Client::Handle_Connect_OP_ReqClientSpawn;
 	ConnectingOpcodes[OP_ReqNewZone] = &Client::Handle_Connect_OP_ReqNewZone;
@@ -119,6 +132,7 @@ void MapOpcodes()
 
 	// connected opcode handler assignments:
 	ConnectedOpcodes[OP_AAAction] = &Client::Handle_OP_AAAction;
+	ConnectedOpcodes[OP_AABuy] = &Client::Handle_OP_AABuy;
 	ConnectedOpcodes[OP_AcceptNewTask] = &Client::Handle_OP_AcceptNewTask;
 	ConnectedOpcodes[OP_AdventureInfoRequest] = &Client::Handle_OP_AdventureInfoRequest;
 	ConnectedOpcodes[OP_AdventureLeaderboardRequest] = &Client::Handle_OP_AdventureLeaderboardRequest;
@@ -191,6 +205,16 @@ void MapOpcodes()
 	ConnectedOpcodes[OP_Disarm] = &Client::Handle_OP_Disarm;
 	ConnectedOpcodes[OP_DisarmTraps] = &Client::Handle_OP_DisarmTraps;
 	ConnectedOpcodes[OP_DoGroupLeadershipAbility] = &Client::Handle_OP_DoGroupLeadershipAbility;
+	ConnectedOpcodes[OP_DragonsHoard] = &Client::Handle_OP_DragonsHoard;
+	ConnectedOpcodes[OP_DragonHoardFeatureSetup] = &Client::Handle_OP_DragonHoardFeatureSetup;  // DH window open/click (State=1)
+	ConnectedOpcodes[OP_DragonHoardKeepAlive] = &Client::Handle_OP_DragonHoardFeatureSetup;    // 0x706A DH heartbeat/keepalive
+	ConnectedOpcodes[OP_DHUnknown3C92] = &Client::Handle_OP_DHUnknown3C92;
+	ConnectedOpcodes[OP_DHUnknown6B80] = &Client::Handle_OP_DHUnknown6B80;
+	// ConnectedOpcodes[OP_DHUnknown6D2D] = &Client::Handle_OP_DHUnknown6D2D;  // [DH_RENAME_6D2D] old handler name
+	ConnectedOpcodes[OP_DHUnknown6D2D] = &Client::Handle_OP_DragonsHoardClient;
+	ConnectedOpcodes[OP_DHUnknown7F65] = &Client::Handle_OP_DHUnknown7F65;
+	ConnectedOpcodes[OP_PersonalDepot] = &Client::Handle_OP_PersonalDepot;
+	ConnectedOpcodes[OP_WindowResponse] = &Client::Handle_OP_WindowResponse;
 	ConnectedOpcodes[OP_DuelDecline] = &Client::Handle_OP_DuelDecline;
 	ConnectedOpcodes[OP_DuelAccept] = &Client::Handle_OP_DuelAccept;
 	ConnectedOpcodes[OP_DumpName] = &Client::Handle_OP_DumpName;
@@ -282,6 +306,7 @@ void MapOpcodes()
 	ConnectedOpcodes[OP_ItemLinkResponse] = &Client::Handle_OP_ItemLinkResponse;
 	ConnectedOpcodes[OP_ItemName] = &Client::Handle_OP_ItemName;
 	ConnectedOpcodes[OP_ItemPreview] = &Client::Handle_OP_ItemPreview;
+	ConnectedOpcodes[OP_ContainerItemInspect] = &Client::Handle_OP_ContainerItemInspect;
 	ConnectedOpcodes[OP_ItemVerifyRequest] = &Client::Handle_OP_ItemVerifyRequest;
 	ConnectedOpcodes[OP_ItemViewUnknown] = &Client::Handle_OP_Ignore;
 	ConnectedOpcodes[OP_Jump] = &Client::Handle_OP_Jump;
@@ -414,6 +439,7 @@ void MapOpcodes()
 	ConnectedOpcodes[OP_UpdateAura] = &Client::Handle_OP_UpdateAura;;
 	ConnectedOpcodes[OP_WearChange] = &Client::Handle_OP_WearChange;
 	ConnectedOpcodes[OP_WhoAllRequest] = &Client::Handle_OP_WhoAllRequest;
+	ConnectedOpcodes[OP_WindowResponse] = &Client::Handle_OP_WindowResponse;
 	ConnectedOpcodes[OP_WorldUnknown001] = &Client::Handle_OP_Ignore;
 	ConnectedOpcodes[OP_XTargetAutoAddHaters] = &Client::Handle_OP_XTargetAutoAddHaters;
 	ConnectedOpcodes[OP_XTargetOpen] = &Client::Handle_OP_XTargetOpen;
@@ -460,6 +486,24 @@ int Client::HandlePacket(const EQApplicationPacket *app)
 	);
 
 	EmuOpcode opcode = app->GetOpcode();
+	
+	// [DH_LOG_CLEANUP] Per-packet opcode trace disabled (was extremely noisy).
+	// VERBOSE LOGGING FOR DEBUGGING - Shows all opcodes with protocol hex
+	uint16 protocol_opcode = app->GetProtocolOpcode();
+	// Log(Logs::General, Logs::Error, "[ZONE_OPCODE_TRACE] EmuOpcode: %d (%s) | Protocol: 0x%04X | Size: %d | State: %d",
+	// 	opcode, OpcodeManager::EmuToName(opcode), protocol_opcode, app->size, static_cast<int>(client_state));
+	
+	// Dump hex for unmapped opcodes (OP_Unknown) to help with reverse engineering
+	if (opcode == OP_Unknown && app->size > 0 && app->size < 10000) {
+		std::string hex_dump = DumpPacketHexToString(app->pBuffer, app->size);
+		Log(Logs::General, Logs::Error, "[UNKNOWN_PACKET_HEX] Protocol: 0x%04X | Size: %d%s", 
+			protocol_opcode, app->size, hex_dump.c_str());
+	}
+
+	// [DH_LOG_CLEANUP] Ingress capture disabled (was logging every packet with hex while window armed).
+	// [DH_INGRESS_CAPTURE] ENABLED — logs each client packet while capture window is armed (before Ack early-return).
+	// TryLogIngressCapturePacket(app);
+	
 	if (opcode == OP_AckPacket) {
 		return true;
 	}
@@ -523,9 +567,11 @@ int Client::HandlePacket(const EQApplicationPacket *app)
 // Finish client connecting state
 void Client::CompleteConnect()
 {
+	Log(Logs::General, Logs::Error, "[CONNECT_DEBUG] CompleteConnect START - current state: %d", static_cast<int>(client_state));
 
 	UpdateWho();
 	client_state = CLIENT_CONNECTED;
+	Log(Logs::General, Logs::Error, "[CONNECT_DEBUG] client_state set to CLIENT_CONNECTED (%d)", static_cast<int>(client_state));
 	SendAllPackets();
 	hpupdate_timer.Start();
 	autosave_timer.Start();
@@ -1021,10 +1067,12 @@ void Client::Handle_Connect_OP_ClientError(const EQApplicationPacket *app)
 
 void Client::Handle_Connect_OP_ClientReady(const EQApplicationPacket *app)
 {
+	Log(Logs::General, Logs::Error, "[CONNECT_DEBUG] OP_ClientReady received - calling CompleteConnect");
 	conn_state = ClientReadyReceived;
 	if (!Spawned())
 		SendZoneInPackets();
 	CompleteConnect();
+	Log(Logs::General, Logs::Error, "[CONNECT_DEBUG] CompleteConnect finished - client_state should now be: %d (2=CONNECTED)", static_cast<int>(client_state));
 	SendHPUpdate();
 }
 
@@ -1651,6 +1699,15 @@ void Client::Handle_Connect_OP_ZoneEntry(const EQApplicationPacket *app)
 		m_pp.RestTimer = 0;
 
 	SendMembership();
+	SendMembershipSettings();
+	SendDragonHoardFeatureUnlock();  // CRITICAL: Unlock Dragon's Hoard feature (0x1ec5fb)
+	SendDragonHoardSlotCounts();     // CRITICAL: Set DH=200, Depot=500 slot counts
+	// [DH_ZONEIN_ITEMS_V2] Send DH item list at zone-in so client holds items before window opens.
+	// [DH_LOG_CLEANUP_2] [DH_ZONEIN_V2_LOG]
+	// LogInfo("[DH_ZONEIN_V2] Sending DH item list at zone-in, connected={}", Connected() ? "yes" : "no");
+	if (Connected()) {
+		SendDragonHoardItemList();
+	}
 
 	outapp = new EQApplicationPacket(OP_PlayerProfile, sizeof(PlayerProfile_Struct));
 
@@ -4394,7 +4451,10 @@ void Client::Handle_OP_CancelTrade(const EQApplicationPacket *app)
 void Client::Handle_OP_CastSpell(const EQApplicationPacket *app)
 {
 	using EQ::spells::CastingSlot;
+	LogError("[CAST_SPELL_DEBUG] Received OP_CastSpell | Size: {} | Expected: {}\n{}", 
+		app->size, sizeof(CastSpell_Struct), DumpPacketHexToString(app->pBuffer, app->size));
 	if (app->size != sizeof(CastSpell_Struct)) {
+		LogError("[CAST_SPELL_DEBUG] Size mismatch! Packet size: {}, expected: {}", app->size, sizeof(CastSpell_Struct));
 		std::cout << "Wrong size: OP_CastSpell, size=" << app->size << ", expected " << sizeof(CastSpell_Struct) << std::endl;
 		return;
 	}
@@ -4408,21 +4468,31 @@ void Client::Handle_OP_CastSpell(const EQApplicationPacket *app)
 
 	CastSpell_Struct* castspell = (CastSpell_Struct*)app->pBuffer;
 
+	LogError("[CAST_SPELL_DEBUG] Parsed values: slot={}, spell_id={}, target_id={}, inventoryslot={}", 
+		castspell->slot, castspell->spell_id, castspell->target_id, castspell->inventoryslot);
+
 	m_TargetRing = glm::vec3(castspell->x_pos, castspell->y_pos, castspell->z_pos);
 
+	LogError("[CAST_SPELL_DEBUG] About to call CastSpell()");
 	LogSpells("OP CastSpell: slot [{}] spell [{}] target [{}] inv [{}]", castspell->slot, castspell->spell_id, castspell->target_id, (unsigned long)castspell->inventoryslot);
 	CastingSlot slot = static_cast<CastingSlot>(castspell->slot);
 
 	if (RuleB(Spells, RequireMnemonicRetention)) {
+		LogError("[CAST_SPELL_DEBUG] Checking mnemonic retention");
 		if (EQ::ValueWithin(castspell->slot, 8, 11) && GetAA(aaMnemonicRetention) < (castspell->slot - 7)) {
+			LogError("[CAST_SPELL_DEBUG] Failed mnemonic retention check - interrupting");
 			InterruptSpell(castspell->spell_id);
 			Message(Chat::Red, "You do not have the required AA to use this spell slot.");
 			return;
 		}
 	}
 
+	LogError("[CAST_SPELL_DEBUG] Checking if spell is memorized: m_pp.mem_spells[{}]={}, castspell->spell_id={}", 
+		castspell->slot, m_pp.mem_spells[castspell->slot], castspell->spell_id);
+
 	/* Memorized Spell */
 	if (m_pp.mem_spells[castspell->slot] && m_pp.mem_spells[castspell->slot] == castspell->spell_id) {
+		LogError("[CAST_SPELL_DEBUG] Spell is memorized - proceeding with cast");
 		uint16 spell_to_cast = 0;
 		if (castspell->slot < EQ::spells::SPELL_GEM_COUNT) {
 			spell_to_cast = m_pp.mem_spells[castspell->slot];
@@ -4730,6 +4800,9 @@ void Client::Handle_OP_ClickDoor(const EQApplicationPacket *app)
 
 void Client::Handle_OP_ClickObject(const EQApplicationPacket *app)
 {
+	Log(Logs::General, Logs::Error, "[CLICK_DEBUG] OP_ClickObject received - Size: %d, Expected: %zu", 
+		app->size, sizeof(ClickObject_Struct));
+	
 	if (app->size != sizeof(ClickObject_Struct)) {
 		LogError("Invalid size on ClickObject_Struct: Expected [{}], Got [{}]",
 			sizeof(ClickObject_Struct), app->size);
@@ -4771,6 +4844,8 @@ void Client::Handle_OP_ClickObject(const EQApplicationPacket *app)
 
 void Client::Handle_OP_ClickObjectAction(const EQApplicationPacket *app)
 {
+	Log(Logs::General, Logs::Error, "[CLICK_DEBUG] OP_ClickObjectAction received - Size: %d", app->size);
+	
 	if (app->size == 0) {
 		// RoF sends this packet 0 sized when switching from auto-combine to experiment windows.
 		// Not completely sure if 0 sized is for this or for closing objects as commented out below
@@ -9085,70 +9160,50 @@ void Client::Handle_OP_InstillDoubt(const EQApplicationPacket *app)
 
 void Client::Handle_OP_ItemLinkClick(const EQApplicationPacket *app)
 {
-	if (app->size != sizeof(ItemViewRequest_Struct)) {
-		LogError("Wrong size on OP_ItemLinkClick. Got: [{}], Expected: [{}]", app->size,
-			sizeof(ItemViewRequest_Struct));
-		DumpPacket(app);
+	if (app->size < 48) {
 		return;
 	}
 
 	ItemViewRequest_Struct *ivrs = (ItemViewRequest_Struct *)app->pBuffer;
 
-	// todo: verify ivrs->link_hash based on a rule, in case we don't care about people being able to sniff data
-	// from the item DB
-
 	const EQ::ItemData *item = database.GetItem(ivrs->item_id);
+
 	if (!item) {
-		if (ivrs->item_id != SAYLINK_ITEM_ID) {
-			Message(Chat::Red, "Error: The item for the link you have clicked on does not exist!");
+		if (ivrs->item_id == SAYLINK_ITEM_ID) {
+			bool silentsaylink = (ivrs->augments[1] > 0);
+			int sayid = silentsaylink ? (int)ivrs->augments[1] : (int)ivrs->augments[0];
+
+			if (sayid > 0) {
+				std::string query = StringFormat("SELECT `phrase` FROM saylink WHERE `id` = '%i'", sayid);
+				auto results = database.QueryDatabase(query);
+				if (results.Success() && results.RowCount() == 1) {
+					auto row = results.begin();
+					std::string response = row[0];
+					if (!silentsaylink) {
+						Message(Chat::LightGray, "You say, '%s'", response.c_str());
+					}
+					ChannelMessageReceived(ChatChannel_Say, Language::CommonTongue, Language::MaxValue, response.c_str(), nullptr, true);
+					return;
+				}
+			}
+			Message(Chat::Red, "Error: Say Link not found.");
 			return;
 		}
-		// This new scheme will shuttle the ID in the first augment for non-silent links
-		// and the second augment for silent.
-		std::string response = "";
-		bool silentsaylink = ivrs->augments[1] > 0 ? true : false;
-		int sayid = silentsaylink ? ivrs->augments[1] : ivrs->augments[0];
 
-		if (sayid > 0) {
-			std::string query = StringFormat("SELECT `phrase` FROM saylink WHERE `id` = '%i'", sayid);
-			auto results = database.QueryDatabase(query);
-			if (!results.Success()) {
-				Message(Chat::Red, "Error: The saylink (%s) was not found in the database.", response.c_str());
-				return;
-			}
-
-			if (results.RowCount() != 1) {
-				Message(Chat::Red, "Error: The saylink (%s) was not found in the database.", response.c_str());
-				return;
-			}
-
-			auto row = results.begin();
-			response = row[0];
-		}
-
-		if (!response.empty()) {
-			if (!silentsaylink) {
-				Message(Chat::LightGray, "You say, '%s'", response.c_str());
-			}
-
-			ChannelMessageReceived(ChatChannel_Say, Language::CommonTongue, Language::MaxValue, response.c_str(), nullptr, true);
-
-			return;
-		}
-		else {
-			Message(Chat::Red, "Error: Say Link not found or is too long.");
-			return;
-		}
+		Message(Chat::Red, "Error: The item for the link you have clicked on does not exist!");
+		return;
 	}
 
-	EQ::ItemInstance *inst =
-		database.CreateItem(item, item->MaxCharges, ivrs->augments[0], ivrs->augments[1], ivrs->augments[2],
-			ivrs->augments[3], ivrs->augments[4], ivrs->augments[5]);
+	EQ::ItemInstance *inst = database.CreateItem(item, item->MaxCharges, 
+		ivrs->augments[0], ivrs->augments[1], ivrs->augments[2],
+		ivrs->augments[3], ivrs->augments[4], ivrs->augments[5]);
+
 	if (inst) {
 		SendItemPacket(0, inst, ItemPacketViewLink);
 		safe_delete(inst);
 	}
 }
+
 
 void Client::Handle_OP_ItemLinkResponse(const EQApplicationPacket *app)
 {
@@ -9182,6 +9237,23 @@ void Client::Handle_OP_ItemName(const EQApplicationPacket *app)
 		FastQueuePacket(&outapp);
 	}
 	return;
+}
+
+// Laurion 0x609c: item inspect button from Dragon's Hoard (or other container). Request: at least 4 bytes, first dword = slot index 0-199.
+void Client::Handle_OP_ContainerItemInspect(const EQApplicationPacket *app)
+{
+	if (!app->pBuffer || app->size < 4)
+		return;
+	uint32_t slot_u = *(uint32_t*)app->pBuffer;
+	if (slot_u > 199)
+		return;
+	int16_t slot_id = static_cast<int16_t>(slot_u);
+	EQ::ItemInstance* inst = database.GetDragonHoardItemBySlot(AccountID(), slot_id);
+	if (!inst)
+		return;
+	// Send item for inspect popup; server slot 5000+ so Laurion encoder uses DH layout if applicable
+	SendItemPacket(5000 + slot_id, inst, ItemPacketViewLink);
+	safe_delete(inst);
 }
 
 void Client::Handle_OP_ItemPreview(const EQApplicationPacket *app)
@@ -10333,8 +10405,19 @@ return;
 
 void Client::Handle_OP_MemorizeSpell(const EQApplicationPacket *app)
 {
+	LogError("[MEM_SPELL_DEBUG] Received OP_MemorizeSpell | Size: {}\n{}", 
+		app->size, DumpPacketHexToString(app->pBuffer, app->size));
+	
+	if (app->size == sizeof(MemorizeSpell_Struct)) {
+		MemorizeSpell_Struct* mem = (MemorizeSpell_Struct*)app->pBuffer;
+		LogError("[MEM_SPELL_DEBUG] Parsed: slot={}, spell_id={}, scribing={}, reduction={}", 
+			mem->slot, mem->spell_id, mem->scribing, mem->reduction);
+	}
+	
 	cheat_manager.CheckMemTimer();
 	OPMemorizeSpell(app);
+	LogError("[MEM_SPELL_DEBUG] After OPMemorizeSpell - m_pp.mem_spells[0]={}, [1]={}, [2]={}", 
+		m_pp.mem_spells[0], m_pp.mem_spells[1], m_pp.mem_spells[2]);
 	return;
 }
 
@@ -10762,6 +10845,20 @@ void Client::Handle_OP_MoveCoin(const EQApplicationPacket *app)
 
 void Client::Handle_OP_MoveItem(const EQApplicationPacket *app)
 {
+	// [DH_LOG_CLEANUP] Per-packet MoveItem hex + verbose lines disabled.
+	// Full raw hex first — need actual bytes for every packet (DH deposit uses Type=38; if eaten before decode we won't see it here)
+	// Log(Logs::General, Logs::Error, "[MOVEITEM] Packet received - Size=[%u] bytes, State=[%d] (expected server struct=%u)",
+	// 	app ? app->size : 0, (int)client_state, (unsigned)sizeof(MoveItem_Struct));
+	// if (app && app->pBuffer && app->size > 0) {
+	// 	for (uint32_t offset = 0; offset < app->size; offset += 16) {
+	// 		std::ostringstream line;
+	// 		line << std::setfill('0') << std::setw(4) << std::dec << offset << ": ";
+	// 		for (uint32_t i = offset; i < offset + 16 && i < app->size; i++)
+	// 			line << std::hex << std::setw(2) << std::setfill('0') << (int)(uint8)app->pBuffer[i] << " ";
+	// 		Log(Logs::General, Logs::Error, "[MOVEITEM] RAW %s", line.str().c_str());
+	// 	}
+	// }
+
 	if (!CharacterID())
 	{
 		return;
@@ -10773,6 +10870,20 @@ void Client::Handle_OP_MoveItem(const EQApplicationPacket *app)
 	}
 
 	MoveItem_Struct* mi = (MoveItem_Struct*)app->pBuffer;
+	static const uint32 DRAGON_HOARD_SLOT_BEGIN = 5000;
+	static const uint32 DRAGON_HOARD_SLOT_END   = 5199;
+	// [DH_LOG_CLEANUP] Per-packet cursor/DH/decode spam disabled (was cursor_to_dh / from_cursor logs).
+	// const bool cursor_to_dh = (mi->from_slot == EQ::invslot::slotCursor && mi->to_slot >= DRAGON_HOARD_SLOT_BEGIN && mi->to_slot <= DRAGON_HOARD_SLOT_END);
+	// const bool from_cursor = (mi->from_slot == EQ::invslot::slotCursor);
+	// if (from_cursor) {
+	// 	Log(Logs::General, Logs::Error, "[MOVEITEM] *** CURSOR MOVE: from_slot=%u (cursor) to_slot=%u number_in_stack=%u",
+	// 		mi->from_slot, mi->to_slot, mi->number_in_stack);
+	// }
+	// if (cursor_to_dh) {
+	// 	Log(Logs::General, Logs::Error, "[MOVEITEM] *** DH_CLICK: item on cursor -> Dragon Hoard slot %u (from=cursor to=DH). Full packet above.", mi->to_slot);
+	// }
+	// Log(Logs::General, Logs::Error, "[MOVEITEM] decoded from_slot=%u to_slot=%u number_in_stack=%u",
+	// 	mi->from_slot, mi->to_slot, mi->number_in_stack);
 	if (spellend_timer.Enabled() && casting_spell_id && !IsBardSong(casting_spell_id))
 	{
 		if (mi->from_slot != mi->to_slot && (mi->from_slot <= EQ::invslot::GENERAL_END || mi->from_slot > 39) && IsValidSlot(mi->from_slot) && IsValidSlot(mi->to_slot))
@@ -10815,6 +10926,69 @@ void Client::Handle_OP_MoveItem(const EQApplicationPacket *app)
 	}
 
 	if (mi_hack) { Message(Chat::Yellow, "Caution: Illegal use of inaccessible bag slots!"); }
+
+	// Dragon's Hoard: when client sends move to typeDragonHoard slot, Laurion decode maps to_slot 5000..5199 (200 slots)
+	if (mi->to_slot >= DRAGON_HOARD_SLOT_BEGIN && mi->to_slot <= DRAGON_HOARD_SLOT_END) {
+		// [DH_MOVEITEM_SKIP] Empty source (e.g. cursor cleared by Handle_OP_DragonsHoardClient action=3) — ignore stray MoveItem to DH.
+		const EQ::ItemInstance* inst = GetInv().GetItem(mi->from_slot);
+		if (!inst || !inst->GetItem()) {
+			Log(Logs::General, Logs::Error, "[DH_MOVEITEM_SKIP] item already deposited via action=3 (from_slot=%u to_slot=%u)",
+				(unsigned)mi->from_slot, (unsigned)mi->to_slot);
+			return;
+		}
+		// Intercept: treat as deposit to Dragon's Hoard (same logic as OP_DragonsHoard action=4)
+		// const EQ::ItemInstance* inst = GetInv().GetItem(mi->from_slot);
+		// if (!inst || !inst->GetItem()) {
+		// 	Message(Chat::Red, "No item in that slot.");
+		// 	return;
+		// }
+		uint64 client_serial = (uint64)inst->GetSerialNumber();
+		if (client_serial == 0) { client_serial = (uint64)(uint32)inst->GetSerialNumber(); }
+		uint32 account_id = AccountID();
+		uint32 hoard_count = database.GetDragonHoardCount(account_id);
+		if (hoard_count >= 200) {
+			Message(Chat::Red, "Dragon's Hoard is full.");
+			return;
+		}
+		EQ::ItemInstance* existing = database.GetDragonHoardItemBySerial(account_id, client_serial);
+		if (existing) {
+			delete existing;
+			Message(Chat::Red, "That item is already in your Dragon's Hoard.");
+			return;
+		}
+		int16 dh_slot = database.GetNextDragonHoardSlot(account_id);
+		if (dh_slot < 0) {
+			Message(Chat::Red, "Dragon's Hoard is full.");
+			return;
+		}
+		if (!database.SaveDragonHoardItem(account_id, dh_slot, inst)) {
+			Message(Chat::Red, "Failed to save item to Dragon's Hoard.");
+			return;
+		}
+		uint32 move_stack = (inst->IsStackable() && inst->GetCharges() > 0) ? static_cast<uint32>(inst->GetCharges()) : 0;
+		DeleteItemInInventory(mi->from_slot, 0, false, true);  // no client packet — we send OP_MoveItem below
+		// Confirm move so client stays in sync (from_slot -> DH slot 5000..5199)
+		const uint32 dh_client_slot = 5000 + static_cast<uint32>(dh_slot);
+		auto move_confirm = new EQApplicationPacket(OP_MoveItem, sizeof(MoveItem_Struct));
+		MoveItem_Struct* move_out = (MoveItem_Struct*)move_confirm->pBuffer;
+		move_out->from_slot = mi->from_slot;
+		move_out->to_slot = dh_client_slot;
+		move_out->number_in_stack = move_stack;
+		QueuePacket(move_confirm);
+		safe_delete(move_confirm);
+		uint32 new_count = database.GetDragonHoardCount(account_id);
+		auto outapp = new EQApplicationPacket(OP_DragonsHoard, sizeof(DragonsHoard_Response_Struct));
+		DragonsHoard_Response_Struct* response = (DragonsHoard_Response_Struct*)outapp->pBuffer;
+		memset(response, 0, sizeof(DragonsHoard_Response_Struct));
+		response->action = 0;
+		response->owned = 1;
+		response->max_slots = 200;
+		response->item_count = new_count;
+		QueuePacket(outapp);
+		safe_delete(outapp);
+		Message(Chat::White, "Item deposited to Dragon's Hoard.");
+		return;
+	}
 
 	if (!SwapItem(mi) && IsValidSlot(mi->from_slot) && IsValidSlot(mi->to_slot)) {
 		SwapItemResync(mi);
@@ -17234,3 +17408,1240 @@ void Client::Handle_OP_ShopRetrieveParcel(const EQApplicationPacket *app)
     auto parcel_in = (ParcelRetrieve_Struct *)app->pBuffer;
     DoParcelRetrieve(*parcel_in);
 }
+
+// ============================================================================
+// LAURION'S SONG EXPANSION PACKET HANDLERS - CORRECTED
+// Add these at the end of client_packet.cpp
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// OP_WindowResponse (0x2B7C)
+// ----------------------------------------------------------------------------
+void Client::Handle_OP_WindowResponse(const EQApplicationPacket *app)
+{
+	Log(Logs::General, Logs::Error, "[WINDOW_RESPONSE] Packet received - Size=[%u] bytes, State=[%d]", app->size, (int)client_state);
+	
+	// Handle 336-byte request (0x2B7C) - storage capacity query sent when opening bank/DH/Depot
+	if (app->size == 336) {
+		Log(Logs::General, Logs::Error, "[WINDOW_RESPONSE] Storage capacity query detected (336 bytes, State=%d)", (int)client_state);
+		
+		// [DH_LOG_CLEANUP_3] INCOMING HEX loop disabled.
+		// FULL HEX DUMP of incoming packet
+		// if (app->pBuffer) {
+		// 	for (uint32 offset = 0; offset < app->size; offset += 16) {
+		// 		std::ostringstream line;
+		// 		line << std::setfill('0') << std::setw(4) << std::dec << offset << ": ";
+		// 		for (uint32 i = offset; i < offset + 16 && i < app->size; i++)
+		// 			line << std::hex << std::setw(2) << std::setfill('0') << (int)(uint8)app->pBuffer[i] << " ";
+		// 		Log(Logs::General, Logs::Error, "[WINDOW_RESPONSE] INCOMING HEX %s", line.str().c_str());
+		// 	}
+		// }
+		
+		// Read key fields from incoming packet
+		uint32* incoming_data = (uint32*)app->pBuffer;
+		uint32 field_0 = incoming_data[0];   // Offset 0
+		uint32 field_4 = incoming_data[1];   // Offset 4 (query_type?)
+		uint32 field_8 = incoming_data[2];   // Offset 8
+		uint32 field_12 = incoming_data[3];  // Offset 12
+		
+		Log(Logs::General, Logs::Error, "[WINDOW_RESPONSE] Incoming: [0]=%u (0x%08X), [4]=%u (0x%08X), [8]=%u, [12]=%u", 
+			field_0, field_0, field_4, field_4, field_8, field_12);
+		
+		// Build response packet
+		uint32 account_id = AccountID();
+		uint32 dh_count = database.GetDragonHoardCount(account_id);
+		auto outapp = new EQApplicationPacket(OP_WindowResponse, 336);
+		memset(outapp->pBuffer, 0, 336);
+		
+		uint32* data = (uint32*)outapp->pBuffer;
+		data[0] = account_id;      // Account ID at offset 0
+		data[1] = field_4;         // Echo field at offset 4
+		data[2] = 200;             // Dragon's Hoard capacity at offset 8
+		data[3] = dh_count;        // Current DH item count at offset 12 (from dragonhoard_items)
+		data[4] = 24;              // Bank slots at offset 16
+		data[5] = 0;               // Current bank usage at offset 20
+		data[6] = 500;             // Personal Depot capacity at offset 24
+		data[7] = 0;               // Current depot usage at offset 28
+		
+		Log(Logs::General, Logs::Error, "[WINDOW_RESPONSE] OUTGOING response: AccountID=%u, echo_field=%u, DH_cap=200, DH_count=%u, bank=24, depot_cap=500",
+			account_id, field_4, dh_count);
+		
+		// [DH_LOG_CLEANUP_3] OUTGOING HEX loop disabled.
+		// FULL HEX DUMP of outgoing packet
+		// for (uint32 offset = 0; offset < 336; offset += 16) {
+		// 	std::ostringstream line;
+		// 	line << std::setfill('0') << std::setw(4) << std::dec << offset << ": ";
+		// 	for (uint32 i = offset; i < offset + 16 && i < 336; i++)
+		// 		line << std::hex << std::setw(2) << std::setfill('0') << (int)(uint8)outapp->pBuffer[i] << " ";
+		// 	Log(Logs::General, Logs::Error, "[WINDOW_RESPONSE] OUTGOING HEX %s", line.str().c_str());
+		// }
+		
+		QueuePacket(outapp);
+		safe_delete(outapp);
+		return;
+	}
+	
+	// Handle original WindowResponse_Struct (smaller packet)
+	if (app->size != sizeof(WindowResponse_Struct)) {
+		LogError("Size mismatch in OP_WindowResponse. Expected [%lu] or 336, got [%u]",
+		         sizeof(WindowResponse_Struct), app->size);
+		return;
+	}
+
+	WindowResponse_Struct* wr = (WindowResponse_Struct*)app->pBuffer;
+
+	Log(Logs::Detail, Logs::Netcode, "%s WindowResponse: response_type=%u",
+	    GetName(), wr->response_type);
+
+	if (wr->response_type == 1) {
+		Log(Logs::Detail, Logs::Netcode, "%s Window operation acknowledged", GetName());
+	} else if (wr->response_type == 0) {
+		Log(Logs::Detail, Logs::Netcode, "%s Window closed/cancelled", GetName());
+	} else {
+		LogError("%s Unknown window response type: %u", GetName(), wr->response_type);
+	}
+}
+
+
+void Client::Handle_OP_AABuy(const EQApplicationPacket *app)
+{
+	if (!app || !app->pBuffer) {
+		return;
+	}
+
+	AABuyWindow_Struct* aabuy = (AABuyWindow_Struct*)app->pBuffer;
+
+	Log(Logs::Detail, Logs::Netcode, "{} AABuy: action={}, aa_id={}, param2={}, param3={}",
+	    GetName(), aabuy->action, aabuy->aa_id, aabuy->parameter2, aabuy->parameter3);
+
+	switch (aabuy->action) {
+		case 0:
+			Log(Logs::General, Logs::Netcode, "{} Attempting to purchase AA: {}", 
+			    GetName(), aabuy->aa_id);
+			// TODO: Implement AA purchase logic
+			break;
+		case 1:
+		case 2:
+		case 3:
+			Log(Logs::Detail, Logs::Netcode, "{} AA query: type={}, aa_id={}", 
+			    GetName(), aabuy->action, aabuy->aa_id);
+			// TODO: Send AA details back to client
+			break;
+		case 10:
+			Log(Logs::Detail, Logs::Netcode, "{} AA special request: aa_id={}", 
+			    GetName(), aabuy->aa_id);
+			break;
+		default:
+			LogError("{} Unknown AA buy action: {}", GetName(), aabuy->action);
+			break;
+	}
+}
+
+// [DH_DEPOSIT_RESTORE] Binary Ninja root dumps (workspace *.txt) vs server — client deposit/receive chain:
+// - ninja dump sub 1401E09AD.txt, main opcode dispatcher 1401de661.txt: protocol 0x6D0F -> sub_1401f87f0(buffer, size).
+// - 1401f87f0 dh packet handler.txt: action 2 -> writes *(data_140e33f50+0x23ec), sub_14010a280; action 0 + owned byte != 0 -> sub_1401098f0 (clear +0x330 list) + sub_14010a280; action 8 + 5B pkt + arg2[1].b==0 -> *(+0x23e8)=1.
+// - DH deposit function 1401080c0.txt: sub_1401080c0 aborts if *(+0x23e8)==0; compares stash to +0x23ec; sends 0x6D0F with dword action=4 + serial (12B) via sub_140636660 — server Handle_OP_DragonsHoard case 4 + Handle_OP_MoveItem(to 5000..) mirror this.
+// - 14010a880 function.txt: msg 0x23 with DH target -> sub_1401080c0 (drag-to-hoard alongside MoveItem).
+// - sub_1400eb900 inventory move drop.txt: rsi==0x23 path touches global UI state (data_140e35f70+0x10); same 0x23 family as DH window drop handling.
+// - binary ninja function 1401d5140.txt: dispatch 0x6D0F -> sub_1401f87f0; outer flow ties to sub_1401e09ad (large send/router stub).
+// - 14010a880 dh deposit function.txt / 14010a880 function.txt: same call sub_1401080c0(arg1,&var_48) on msg 0x23 DH drop path.
+// - zone/inventory.cpp SendCursorBuffer: [DH_CURSOR_77] Laurion sends ItemPacketDragonHoard for cursor after Limbo (DH window slot 0x23 hypothesis); [DH_CURSOR_BUF_LOG] entry log.
+// Inferred "last worked" state: +0x23e8 enabled (action8 byte[4]=0), capacity +0x23ec (action2), client sends action=4 or MoveItem to DH; server MoveItem echo + action=0 ack; window open path sent action0 then 0x77 items then action2 (case 0).
+// Gaps now: post deposit/withdraw only action=0 owned=1 (client clears list per 1f87f0) — trial SendDragonHoardItemList+action=2 left COMMENTED in case 3/4 [DH_TXT_ROOT_AUDIT]. 6D2D path lacks trailing action=2 vs case 0. Laurion MoveItem 28B decode + LaurionToServerSlot Type0 36..235 / Type38 must stay aligned. SendDragonHoardItemList 500ms delay is debug artifact. Normal Handle_OP_MoveItem success sends no OP_MoveItem echo (only DH intercept echoes MoveItem).
+// Do not delete this block; fix by uncommenting trials / aligning sequences — no blob changes required for deposit opcode path.
+
+// ----------------------------------------------------------------------------
+// OP_DragonsHoard (0x6D0F)
+// ----------------------------------------------------------------------------
+void Client::Handle_OP_DragonsHoard(const EQApplicationPacket *app)
+{
+	// [DH_LOG_CLEANUP] Per-packet DH raw / LogInfo / INCOMING HEX spam disabled.
+	// [DH_RAW_LOG] Log every incoming 0x6D0F before any other work; action = first 4 bytes (partial packets zero-pad high bytes).
+	// uint32 dh_raw_action = 0;
+	// const uint32 dh_raw_size = app ? app->size : 0;
+	// if (app && app->pBuffer && dh_raw_size > 0) {
+	// 	const size_t copy_n = dh_raw_size >= sizeof(uint32) ? sizeof(uint32) : static_cast<size_t>(dh_raw_size);
+	// 	memcpy(&dh_raw_action, app->pBuffer, copy_n);
+	// }
+	// LogError("[DH_RAW] size={} action={}", dh_raw_size, dh_raw_action);
+
+	// Raw hex dump at top (LogInfo): size, 16 bytes per line, then first 4 bytes as uint32 action
+	// LogInfo("[DRAGONSHOARD] Incoming packet size={}", app ? app->size : 0u);
+	// if (app && app->pBuffer && app->size > 0) {
+	// 	for (uint32 offset = 0; offset < app->size; offset += 16) {
+	// 		std::ostringstream line;
+	// 		line << std::setfill('0') << std::setw(4) << std::dec << offset << ": ";
+	// 		for (uint32 i = offset; i < offset + 16 && i < app->size; i++)
+	// 			line << std::hex << std::setw(2) << std::setfill('0') << (int)(uint8_t)app->pBuffer[i] << " ";
+	// 		LogInfo("[DRAGONSHOARD] {}", line.str());
+	// 	}
+	// 	if (app->size >= 4) {
+	// 		uint32 action_val = 0;
+	// 		memcpy(&action_val, app->pBuffer, 4);
+	// 		LogInfo("[DRAGONSHOARD] First 4 bytes as uint32 action={}", action_val);
+	// 	}
+	// }
+
+	// ALWAYS log full packet hex regardless of validity
+	// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] Packet received - Size=[%u] bytes, State=[%d]", app->size, (int)client_state);
+
+	// FULL HEX DUMP of incoming packet
+	// if (app->pBuffer && app->size > 0) {
+	// 	for (uint32 offset = 0; offset < app->size; offset += 16) {
+	// 		std::ostringstream line;
+	// 		line << std::setfill('0') << std::setw(4) << std::dec << offset << ": ";
+	// 		for (uint32 i = offset; i < offset + 16 && i < app->size; i++)
+	// 			line << std::hex << std::setw(2) << std::setfill('0') << (int)(uint8)app->pBuffer[i] << " ";
+	// 		Log(Logs::General, Logs::Error, "[DRAGONSHOARD] INCOMING HEX (size=%u) %s", app->size, line.str().c_str());
+	// 	}
+	// }
+
+	// Validate packet - different actions send different sizes
+	if (!app || !app->pBuffer || app->size < 4) {
+		LogError("[DRAGONSHOARD] Invalid packet");
+		return;
+	}
+
+	// Get action from packet (first uint32)
+	uint32 action = 0;
+	memcpy(&action, app->pBuffer, sizeof(uint32));
+
+	// [DH_LOG_CLEANUP] Per-packet action line disabled; keep deposit-only line below.
+	// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] action=[%u] (0=open, 2=slot count, 4=deposit e.g. cursor->DH, 8=enable), size=[%u], State=[%d]",
+	// 	action, app->size, (int)client_state);
+	// [DH_LOG_CLEANUP_3] Verbose action=4 notice disabled (deposit success/failure logs in case 4 kept).
+	// if (action == 4) {
+	// 	Log(Logs::General, Logs::Error, "[DRAGONSHOARD] *** DEPOSIT (action=4): client sent deposit request - see hex above for serial/slot. If from click-with-item-on-cursor this is the packet.");
+	// }
+
+	switch (action) {
+		case 0: {
+			// [DH_FULL_SEQUENCE] Window open: action=0 header first (window+0x6a deposit enable), then OP_ItemPackets, then action=2 display refresh.
+			// [DH_LOG_CLEANUP_3]
+			// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] Window open request (action=0) at State=%d", (int)client_state);
+
+			if (Connected()) {
+				// [DH_CASE0_DOUBLE_ENABLE] Match Handle_OP_DragonsHoardClient action=1: action=8 byte[4]=0 (+0x23e8) then action=8 byte[4]=1 (+0x356) before other responses.
+				{
+					auto outapp_en8a = new EQApplicationPacket(OP_DragonsHoard, 5);
+					memset(outapp_en8a->pBuffer, 0, 5);
+					uint32 *data_en8a = (uint32 *)outapp_en8a->pBuffer;
+					data_en8a[0] = 8;
+					outapp_en8a->pBuffer[4] = 0;
+					QueuePacket(outapp_en8a);
+					safe_delete(outapp_en8a);
+				}
+				{
+					auto outapp_en8b = new EQApplicationPacket(OP_DragonsHoard, 5);
+					memset(outapp_en8b->pBuffer, 0, 5);
+					uint32 *data_en8b = (uint32 *)outapp_en8b->pBuffer;
+					data_en8b[0] = 8;
+					outapp_en8b->pBuffer[4] = 1;
+					QueuePacket(outapp_en8b);
+					safe_delete(outapp_en8b);
+				}
+				// [DH_FULL_SEQUENCE] Send action=0 response FIRST: owned=1, max_slots=200, item_count from DB
+				uint32 dh_count_open = database.GetDragonHoardCount(AccountID());
+				auto outapp_open = new EQApplicationPacket(OP_DragonsHoard, sizeof(DragonsHoard_Response_Struct));
+				DragonsHoard_Response_Struct* response_open = (DragonsHoard_Response_Struct*)outapp_open->pBuffer;
+				memset(response_open, 0, sizeof(DragonsHoard_Response_Struct));
+				response_open->action = 0;
+				response_open->owned = 1;
+				response_open->max_slots = 200;
+				response_open->item_count = dh_count_open;
+
+				// [DH_LOG_CLEANUP_3]
+				// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] [DH_FULL_SEQUENCE] action=0 first: owned=1, max_slots=200, item_count=%u", dh_count_open);
+
+				// [DH_LOG_CLEANUP] Outgoing action=0 HEX dump disabled.
+				// std::ostringstream out_hex;
+				// out_hex << std::hex << std::setfill('0');
+				// for (uint32 i = 0; i < sizeof(DragonsHoard_Response_Struct); i++) {
+				// 	if (i > 0 && i % 4 == 0) {
+				// 		out_hex << " ";
+				// 	}
+				// 	out_hex << std::setw(2) << (int)outapp_open->pBuffer[i];
+				// }
+				// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] [DH_FULL_SEQUENCE] action=0 outgoing HEX (16 bytes): %s", out_hex.str().c_str());
+
+				QueuePacket(outapp_open);
+				safe_delete(outapp_open);
+
+				// [DH_FULL_SEQUENCE] Item list after action=0 (clears / primes client before OP_ItemPackets)
+				SendDragonHoardItemList();
+
+				// [DH_FULL_SEQUENCE] action=2 after items: max_slots=200 — refresh display after items stored
+				auto outapp_slots = new EQApplicationPacket(OP_DragonsHoard, sizeof(DragonsHoard_SlotCount_Struct));
+				DragonsHoard_SlotCount_Struct* slots = (DragonsHoard_SlotCount_Struct*)outapp_slots->pBuffer;
+				memset(slots, 0, sizeof(DragonsHoard_SlotCount_Struct));
+				slots->action = 2;
+				slots->max_slots = 200;
+
+				// [DH_LOG_CLEANUP] Outgoing action=2 HEX after items disabled.
+				// std::ostringstream slots_hex;
+				// slots_hex << std::hex << std::setfill('0');
+				// for (uint32 i = 0; i < sizeof(DragonsHoard_SlotCount_Struct); i++) {
+				// 	slots_hex << std::setw(2) << (int)outapp_slots->pBuffer[i] << " ";
+				// }
+				// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] [DH_FULL_SEQUENCE] action=2 after items HEX: %s", slots_hex.str().c_str());
+				QueuePacket(outapp_slots);
+				safe_delete(outapp_slots);
+			}
+			break;
+		}
+
+		case 1: {
+			// Close Dragon's Hoard
+			// [DH_LOG_CLEANUP_3]
+			// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] Close request (action=1) at State=%d", (int)client_state);
+
+			auto outapp = new EQApplicationPacket(OP_DragonsHoard, sizeof(DragonsHoard_Struct));
+			DragonsHoard_Struct* response = (DragonsHoard_Struct*)outapp->pBuffer;
+			response->action = 1;
+
+			// [DH_LOG_CLEANUP] Outgoing action=1 HEX disabled.
+			// std::ostringstream out_hex;
+			// out_hex << std::hex << std::setfill('0');
+			// for (uint32 i = 0; i < sizeof(DragonsHoard_Struct); i++) {
+			// 	out_hex << std::setw(2) << (int)outapp->pBuffer[i] << " ";
+			// }
+			// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] OUTGOING action=1 response HEX: %s", out_hex.str().c_str());
+
+			QueuePacket(outapp);
+			safe_delete(outapp);
+			break;
+		}
+
+		case 2: {
+			// Client requests slot count OR inventory list.
+			// At zone-in we only send action=2 (capacity); we do NOT send action=0 here. The client gets action=0 (empty list)
+			// when it sends OP_DragonsHoard action=0 (window open) or via 0x6D2D (item list request). eqlib: DragonHoardPopulated
+			// (0x23e8) may require receiving the action=0 "list" response; see action=0 and Handle_OP_DragonsHoardClient (was Handle_OP_DHUnknown6D2D).
+			// [DH_LOG_CLEANUP_3]
+			// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] action=2 request at State=%d - may be slot count query OR item list request", (int)client_state);
+
+			// Check if this is actually an inventory list request at State=1
+			if (client_state == CLIENT_CONNECTED) {
+				// [DH_LOG_CLEANUP_3]
+				// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] action=2 at State=1 - This may be inventory/item list request, not slot count!");
+				
+				uint32 dh_count_a2 = database.GetDragonHoardCount(AccountID());
+				// Try sending a more complete response with item count and slot info
+				auto outapp = new EQApplicationPacket(OP_DragonsHoard, sizeof(DragonsHoard_SlotCount_Struct) + 8);
+				memset(outapp->pBuffer, 0, sizeof(DragonsHoard_SlotCount_Struct) + 8);
+				
+				DragonsHoard_SlotCount_Struct* response = (DragonsHoard_SlotCount_Struct*)outapp->pBuffer;
+				response->action = 2;
+				response->max_slots = 200;
+				
+				// Add extra fields for item count
+				uint32* extra = (uint32*)(outapp->pBuffer + sizeof(DragonsHoard_SlotCount_Struct));
+				extra[0] = dh_count_a2;  // Current item count (from dragonhoard_items)
+				extra[1] = 0;  // Reserved
+
+				// [DH_LOG_CLEANUP_3]
+				// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] Sending action=2 response at State=1: max_slots=200, item_count=%u", dh_count_a2);
+
+				// [DH_LOG_CLEANUP] Outgoing action=2 HEX (State=1) disabled.
+				// std::ostringstream out_hex;
+				// out_hex << std::hex << std::setfill('0');
+				// for (uint32 i = 0; i < sizeof(DragonsHoard_SlotCount_Struct) + 8; i++) {
+				// 	out_hex << std::setw(2) << (int)outapp->pBuffer[i] << " ";
+				// }
+				// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] OUTGOING action=2 response HEX (State=1): %s", out_hex.str().c_str());
+
+				QueuePacket(outapp);
+				safe_delete(outapp);
+			} else {
+				// State=0 - just slot count
+				auto outapp = new EQApplicationPacket(OP_DragonsHoard, sizeof(DragonsHoard_SlotCount_Struct));
+				DragonsHoard_SlotCount_Struct* response = (DragonsHoard_SlotCount_Struct*)outapp->pBuffer;
+				response->action = 2;
+				response->max_slots = 200;
+
+				// [DH_LOG_CLEANUP_3]
+				// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] Sending action=2 response at State=0: max_slots=200");
+
+				// [DH_LOG_CLEANUP] Outgoing action=2 HEX (State=0) disabled.
+				// std::ostringstream out_hex;
+				// out_hex << std::hex << std::setfill('0');
+				// for (uint32 i = 0; i < sizeof(DragonsHoard_SlotCount_Struct); i++) {
+				// 	out_hex << std::setw(2) << (int)outapp->pBuffer[i] << " ";
+				// }
+				// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] OUTGOING action=2 response HEX (State=0): %s", out_hex.str().c_str());
+
+				QueuePacket(outapp);
+				safe_delete(outapp);
+			}
+			break;
+		}
+
+		case 3: {
+			// Retrieve (Withdraw) from Dragon's Hoard. Triggered by DH_Retrieve_Button (arg1[0x61]); client sends via sub_140109bf0.
+			// Client quantity: normal click = 1, Shift+click = full stack, Ctrl+click = 1 from stack.
+			// Packet: [0-3] action=3, [4-11] serial (uint64), [12-15] quantity (uint32). 16 bytes.
+			// [DH_LOG_CLEANUP_3] case 3 retrieve [DRAGONSHOARD] logs disabled (deposit-only verbosity kept).
+			// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] action=3 retrieve request at State=%d", (int)client_state);
+			if (app->size < 16) {
+				// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] action=3 retrieve: packet too small (%u bytes, need 16)", app->size);
+				break;
+			}
+			uint64 client_serial = 0;
+			uint32 quantity = 0;
+			memcpy(&client_serial, app->pBuffer + 4, sizeof(uint64));
+			memcpy(&quantity, app->pBuffer + 12, sizeof(uint32));
+			// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] action=3 retrieve: client_serial=0x%016llX quantity=%u", (unsigned long long)client_serial, quantity);
+			if (quantity < 1) {
+				// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] action=3 retrieve: quantity < 1, rejecting");
+				Message(Chat::Red, "Invalid quantity.");
+				break;
+			}
+
+			uint32 account_id = AccountID();
+			EQ::ItemInstance* inst = database.GetDragonHoardItemBySerial(account_id, client_serial);
+			if (!inst) {
+				inst = database.GetDragonHoardItemBySerial(account_id, (uint64)(uint32)client_serial);
+			}
+			if (!inst || !inst->GetItem()) {
+				if (inst) delete inst;
+				// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] action=3 retrieve: item serial 0x%016llX not in depot", (unsigned long long)client_serial);
+				Message(Chat::Red, "Item not found in your Dragon's Hoard.");
+				break;
+			}
+			int16 stack_charges = inst->GetCharges();
+			// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] action=3 retrieve: found item_id=%u name=%s charges=%d", inst->GetItem()->ID, inst->GetItem()->Name, stack_charges);
+
+			// Partial stack: stackable and requested quantity < stored charges
+			bool stackable = (inst->GetItem()->StackSize > 1);
+			uint32 give_count = quantity;
+			if (stackable && (uint32)stack_charges > quantity) {
+				give_count = quantity;
+			} else {
+				give_count = (uint32)stack_charges;
+			}
+
+			EQ::ItemInstance* give_inst = inst;
+			if (stackable && give_count < (uint32)stack_charges) {
+				give_inst = database.CreateItem(inst->GetItem()->ID, (int16)give_count);
+				if (!give_inst) {
+					delete inst;
+					Message(Chat::Red, "Could not create item instance.");
+					break;
+				}
+			}
+
+			bool placed = false;
+			if (GetInv().CursorEmpty()) {
+				PushItemOnCursor(*give_inst, true);
+				placed = true;
+				// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] action=3 retrieve: placed %u on cursor", give_count);
+			} else {
+				int16 free_slot = GetInv().FindFreeSlot(give_inst->IsClassBag(), true, give_inst->GetItem()->Size, (give_inst->GetItem()->ItemType == EQ::item::ItemTypeArrow));
+				if (free_slot != EQ::invslot::SLOT_INVALID) {
+					PutItemInInventory(free_slot, *give_inst, true);
+					placed = true;
+					// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] action=3 retrieve: placed %u in slot %d", give_count, free_slot);
+				}
+			}
+			if (!placed) {
+				if (give_inst != inst) delete give_inst;
+				delete inst;
+				// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] action=3 retrieve: no free inventory slot");
+				Message(Chat::Red, "Your inventory is full.");
+				break;
+			}
+
+			if (give_inst != inst)
+				delete give_inst;
+
+			int16 remaining = stack_charges - (int16)give_count;
+			if (remaining <= 0) {
+				if (!database.DeleteDragonHoardItemBySerial(account_id, client_serial))
+					database.DeleteDragonHoardItemBySerial(account_id, (uint64)(uint32)client_serial);
+				// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] action=3 retrieve: deleted from dragonhoard_items");
+			} else {
+				database.UpdateDragonHoardCharges(account_id, client_serial, remaining);
+				// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] action=3 retrieve: updated dragonhoard charges to %d", remaining);
+			}
+			delete inst;
+
+			uint32 new_count = database.GetDragonHoardCount(account_id);
+			// [DH_TXT_ROOT_AUDIT] Same sub_1401f87f0 action=0 + owned=1 path as deposit (1401098f0 clear then sub_14010a280). If hoard UI empties wrongly after withdraw, try commented resync block after QueuePacket (same as case 4).
+			auto outapp = new EQApplicationPacket(OP_DragonsHoard, sizeof(DragonsHoard_Response_Struct));
+			DragonsHoard_Response_Struct* response = (DragonsHoard_Response_Struct*)outapp->pBuffer;
+			memset(response, 0, sizeof(DragonsHoard_Response_Struct));
+			response->action = 0;
+			response->owned = 1;
+			response->max_slots = 200;
+			response->item_count = new_count;
+			// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] action=3 retrieve: sending action=0 response item_count=%u", new_count);
+			QueuePacket(outapp);
+			safe_delete(outapp);
+			// [DH_TXT_ROOT_AUDIT] Trial resync after withdraw (commented — do not delete):
+			// if (Connected()) {
+			// 	SendDragonHoardItemList();
+			// 	auto outapp_slots = new EQApplicationPacket(OP_DragonsHoard, sizeof(DragonsHoard_SlotCount_Struct));
+			// 	DragonsHoard_SlotCount_Struct* slots = (DragonsHoard_SlotCount_Struct*)outapp_slots->pBuffer;
+			// 	memset(slots, 0, sizeof(DragonsHoard_SlotCount_Struct));
+			// 	slots->action = 2;
+			// 	slots->max_slots = 200;
+			// 	QueuePacket(outapp_slots);
+			// 	safe_delete(outapp_slots);
+			// }
+			Message(Chat::White, "Item retrieved from Dragon's Hoard.");
+			break;
+		}
+
+		case 4: {
+			// Deposit item into Dragon's Hoard. Packet: [0-3] action=4, [4-11] item serial (uint64). 12 bytes total.
+			// [DH_TXT_ROOT_AUDIT] d:\\Server-larion\\DH deposit function 1401080c0.txt — sub_1401080c0: requires feature 0x1ec5fb, *(data_140e33f50+0x23e8)!=0 (else early exit), stash count vs *(+0x23ec). Sends sub_140636660(...,0x6d0f) with first dword action=4 (var_88=4) + serial bytes — matches this handler.
+			// [DH_TXT_ROOT_AUDIT] d:\\Server-larion\\14010a880 function.txt — drop-to-DH path (arg3==0x23) calls sub_1401080c0.
+			// [DH_LOG_CLEANUP_3] Verbose deposit request / serial / hoard_count disabled (failure + success deposit logs kept).
+			// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] action=4 deposit request at State=%d", (int)client_state);
+			if (app->size < 12) {
+				Log(Logs::General, Logs::Error, "[DRAGONSHOARD] action=4 deposit: packet too small (%u bytes, need 12)", app->size);
+				break;
+			}
+			uint64 client_serial = 0;
+			memcpy(&client_serial, app->pBuffer + 4, sizeof(uint64));
+			// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] action=4 deposit: client_serial=0x%016llX (%llu)", (unsigned long long)client_serial, (unsigned long long)client_serial);
+
+			uint32 account_id = AccountID();
+			uint32 hoard_count = database.GetDragonHoardCount(account_id);
+			// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] deposit: account_id=%u, hoard_count=%u (max 200)", account_id, hoard_count);
+			if (hoard_count >= 200) {
+				Log(Logs::General, Logs::Error, "[DRAGONSHOARD] deposit: depot full (200), rejecting");
+				Message(Chat::Red, "Dragon's Hoard is full.");
+				break;
+			}
+			// [DH_LOG_CLEANUP] Per-deposit duplicate-check line disabled (re-enable for SQL mismatch audits).
+			// [DH_SERIAL_FIX] Log lookup key before duplicate check when false duplicate / SQL mismatch is suspected.
+			// LogError("[DH_SERIAL_FIX] DRAGONSHOARD deposit duplicate check: account_id=[{}] serial_hex=[0x{:016X}] serial_dec=[{}]",
+			// 	account_id, client_serial, client_serial);
+			{
+				EQ::ItemInstance* existing = database.GetDragonHoardItemBySerial(account_id, client_serial);
+				if (existing) {
+					delete existing;
+					Log(Logs::General, Logs::Error, "[DRAGONSHOARD] deposit: serial 0x%016llX already in depot (duplicate), rejecting", (unsigned long long)client_serial);
+					Message(Chat::Red, "That item is already in your Dragon's Hoard.");
+					break;
+				}
+			}
+
+			// Find item in player inventory by serial. EQEmu uses int32 serial; client sends uint64 — match low 32 bits first.
+			// If serial lookup fails, fall back to cursor slot (common deposit-from-cursor case).
+			static const int16 search_slots[][2] = {
+				{ EQ::invslot::slotCursor, EQ::invslot::slotCursor },
+				{ EQ::invbag::CURSOR_BAG_BEGIN, EQ::invbag::CURSOR_BAG_END },
+				{ EQ::invslot::POSSESSIONS_BEGIN, EQ::invslot::POSSESSIONS_END },
+				{ EQ::invbag::GENERAL_BAGS_BEGIN, EQ::invbag::GENERAL_BAGS_END },
+			};
+			int16 found_slot = -1;
+			for (size_t r = 0; r < sizeof(search_slots) / sizeof(search_slots[0]); r++) {
+				for (int16 slot_id = search_slots[r][0]; slot_id <= search_slots[r][1]; slot_id++) {
+					EQ::ItemInstance* inst = GetInv().GetItem(slot_id);
+					if (!inst || !inst->GetItem()) continue;
+					int32 sn = inst->GetSerialNumber();
+					if (sn == (int32)(client_serial & 0xFFFFFFFF) || (uint64)sn == client_serial) {
+						found_slot = slot_id;
+						break;
+					}
+				}
+				if (found_slot >= 0) break;
+			}
+			if (found_slot < 0) {
+				Log(Logs::General, Logs::Error, "[DRAGONSHOARD] deposit: item with serial 0x%016llX not found in inventory (try cursor or matching item_id/slot if client differs)", (unsigned long long)client_serial);
+				Message(Chat::Red, "Item not found in your inventory.");
+				break;
+			}
+			EQ::ItemInstance* inst = GetInv().GetItem(found_slot);
+			// [DH_LOG_CLEANUP_3]
+			// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] deposit: found item at slot %d, item_id=%u, name=%s", found_slot, inst->GetItem()->ID, inst->GetItem()->Name);
+
+			int16 dh_slot = database.GetNextDragonHoardSlot(account_id);
+			if (dh_slot < 0) {
+				Log(Logs::General, Logs::Error, "[DRAGONSHOARD] deposit: no free slot (GetNextDragonHoardSlot failed)");
+				Message(Chat::Red, "Dragon's Hoard is full.");
+				break;
+			}
+			if (!database.SaveDragonHoardItem(account_id, dh_slot, inst)) {
+				Log(Logs::General, Logs::Error, "[DRAGONSHOARD] deposit: SaveDragonHoardItem failed");
+				Message(Chat::Red, "Failed to save item to Dragon's Hoard.");
+				break;
+			}
+			Log(Logs::General, Logs::Error, "[DRAGONSHOARD] deposit: saved to dragonhoard_items slot %d", dh_slot);
+			uint32 move_stack = (inst->IsStackable() && inst->GetCharges() > 0) ? static_cast<uint32>(inst->GetCharges()) : 0;
+			DeleteItemInInventory(found_slot, 0, false, true);  // [DH_MOVEIT_RESTORE] client_update=false — no OP_DeleteItem from DeleteItemInInventory; OP_MoveItem below syncs client
+			Log(Logs::General, Logs::Error, "[DRAGONSHOARD] deposit: removed from inv slot %d", found_slot);
+			// [DH_CASE4_NO_ECHO] OP_MoveItem deposit echo disabled. [DH_NO_REFRESH_ON_DEPOSIT] List refresh after action=0 commented out — client gets action=0 + item_count only.
+			// Confirm move so client stays in sync (from_slot -> DH slot 5000..5199)
+			// [DH_MOVEIT_RESTORE] Restored OP_MoveItem echo (supersedes [DH_CASE4_NO_ECHO] disable above for active path); from_slot=found_slot, to_slot=5000+dh_slot, number_in_stack=move_stack.
+			const uint32 dh_client_slot = 5000 + static_cast<uint32>(dh_slot);
+			auto move_confirm = new EQApplicationPacket(OP_MoveItem, sizeof(MoveItem_Struct));
+			MoveItem_Struct* move_out = (MoveItem_Struct*)move_confirm->pBuffer;
+			move_out->from_slot = found_slot;
+			move_out->to_slot = dh_client_slot;
+			move_out->number_in_stack = move_stack;
+			// [DH_LOG_CLEANUP] Per-deposit MoveItem send line disabled.
+			// [DH_MOVEIT_LOG] Log packet fields as sent (fmt uses [{}]; same values as from_slot=%u to_slot=%u stack=%u dh_client_slot=%u).
+			// LogError("[DH_MOVEIT_LOG] [DH_MOVEIT_SEND] from_slot=[{}] to_slot=[{}] stack=[{}] dh_client_slot=[{}]",
+			// 	move_out->from_slot, move_out->to_slot, move_out->number_in_stack, dh_client_slot);
+			QueuePacket(move_confirm);
+			safe_delete(move_confirm);
+			// [DH_CURSOR_BUFFER] After DH deposit OP_MoveItem, resync cursor buffer (see zone/inventory.cpp SendCursorBuffer / ItemPacketDragonHoard for Laurion).
+			SendCursorBuffer();
+
+			// [DH_CURSOR_CLEAR] DeleteItemInInventory(..., client_update=false) sends no client delete; mirror inventory.cpp OP_DeleteItem pattern so cursor clears after cursor deposit.
+			// if (found_slot == EQ::invslot::slotCursor && IsValidSlot(EQ::invslot::slotCursor)) {
+			// 	auto outapp = new EQApplicationPacket(OP_DeleteItem, sizeof(DeleteItem_Struct));
+			// 	DeleteItem_Struct* delitem = (DeleteItem_Struct*)outapp->pBuffer;
+			// 	delitem->from_slot = EQ::invslot::slotCursor;
+			// 	delitem->to_slot = 0xFFFFFFFF;
+			// 	delitem->number_in_stack = 0xFFFFFFFF;
+			// 	QueuePacket(outapp);
+			// 	safe_delete(outapp);
+			// }
+
+			// [DH_CURSOR_CLEAR_V2] OP_MoveItem cursor→cursor, number_in_stack=0 — replaces active OP_DeleteItem [DH_CURSOR_CLEAR] above (left commented).
+			// [DH_CURSOR_CLEAR_V3] to_slot=0xFFFFFFFF — drop/clear cursor pattern (from_slot=cursor, number_in_stack=0); supersedes cursor→to_slot V2 above.
+			// [DH_MOVEIT_RESTORE] V2/V3/V4 cursor OP_MoveItem path commented out — deposit sync uses OP_MoveItem to DH slot above.
+			// if (found_slot == EQ::invslot::slotCursor && IsValidSlot(EQ::invslot::slotCursor)) {
+			// 	auto move_cursor = new EQApplicationPacket(OP_MoveItem, sizeof(MoveItem_Struct));
+			// 	MoveItem_Struct* mi = (MoveItem_Struct*)move_cursor->pBuffer;
+			// 	memset(mi, 0, sizeof(MoveItem_Struct));
+			// 	mi->from_slot = EQ::invslot::slotCursor;
+			// 	// mi->to_slot = EQ::invslot::slotCursor; // [DH_CURSOR_CLEAR_V2] cursor→cursor (left for audit)
+			// 	mi->to_slot = 0xFFFFFFFF; // [DH_CURSOR_CLEAR_V3]
+			// 	mi->number_in_stack = 0;
+			// 	QueuePacket(move_cursor);
+			// 	safe_delete(move_cursor);
+			// }
+
+			uint32 new_count = database.GetDragonHoardCount(account_id);
+			auto outapp = new EQApplicationPacket(OP_DragonsHoard, sizeof(DragonsHoard_Response_Struct));
+			DragonsHoard_Response_Struct* response = (DragonsHoard_Response_Struct*)outapp->pBuffer;
+			memset(response, 0, sizeof(DragonsHoard_Response_Struct));
+			response->action = 0;
+			response->owned = 1;
+			response->max_slots = 200;
+			response->item_count = new_count;
+			Log(Logs::General, Logs::Error, "[DRAGONSHOARD] deposit: sending action=0 response item_count=%u", new_count);
+			QueuePacket(outapp);
+			safe_delete(outapp);
+			// [DH_NO_REFRESH_ON_DEPOSIT] SendDragonHoardItemList() after deposit disabled — rely on action=0 response with updated item_count only.
+			// [DH_CASE4_NO_ECHO] Repopulate DH window after deposit (MoveItem echo commented out above).
+			// if (Connected()) {
+			// 	SendDragonHoardItemList();
+			// }
+			// [DH_TXT_ROOT_AUDIT] d:\\Server-larion\\1401f87f0 dh packet handler.txt — for action==0, arg3>=5 and arg2[1].b!=0 runs sub_1401098f0 (clear hoard UI list +0x330) then sub_14010a280. owned=1 triggers that path. We do not resend 0x77 hoard item packets here — client list may clear visually until reopen / 6D2D / full window sequence.
+			// [DH_TXT_ROOT_AUDIT] Trial resync (commented — do not delete): mirror case 0 [DH_FULL_SEQUENCE] after deposit ack.
+			// if (Connected()) {
+			// 	SendDragonHoardItemList();
+			// 	auto outapp_slots = new EQApplicationPacket(OP_DragonsHoard, sizeof(DragonsHoard_SlotCount_Struct));
+			// 	DragonsHoard_SlotCount_Struct* slots = (DragonsHoard_SlotCount_Struct*)outapp_slots->pBuffer;
+			// 	memset(slots, 0, sizeof(DragonsHoard_SlotCount_Struct));
+			// 	slots->action = 2;
+			// 	slots->max_slots = 200;
+			// 	QueuePacket(outapp_slots);
+			// 	safe_delete(outapp_slots);
+			// }
+			Message(Chat::White, "Item deposited to Dragon's Hoard.");
+			break;
+		}
+
+		case 8: {
+			// Enable Dragon's Hoard — byte[4]=0 for +0x23e8; populated (byte[4]=1) only in 6D2D before item list
+			// [DH_LOG_CLEANUP_3]
+			// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] Enable request (action=8) - client asking to enable feature");
+			
+			auto outapp = new EQApplicationPacket(OP_DragonsHoard, 5);
+			memset(outapp->pBuffer, 0, 5);
+			uint32* data = (uint32*)outapp->pBuffer;
+			data[0] = 8;  // action
+			outapp->pBuffer[4] = 0;
+
+			// [DH_LOG_CLEANUP] action=8 response byte HEX disabled.
+			// std::ostringstream hex8;
+			// hex8 << std::hex << std::setfill('0');
+			// for (uint32 i = 0; i < 5; i++)
+			// 	hex8 << std::setw(2) << (int)outapp->pBuffer[i] << " ";
+			// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] OP_DragonsHoard action=8 response exact bytes: %s | offset4=0x%02X (%u)",
+			// 	hex8.str().c_str(), (unsigned)outapp->pBuffer[4], (unsigned)outapp->pBuffer[4]);
+			QueuePacket(outapp);
+			safe_delete(outapp);
+			break;
+		}
+
+		default:
+			// [DH_LOG_CLEANUP_3]
+			// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] Unknown action: %u (0x%08X) at State=%d", action, action, (int)client_state);
+			break;
+	}
+	
+	Log(Logs::Detail, Logs::Netcode, "%s OP_DragonsHoard handler completed successfully", GetName());
+}
+
+// OP_PersonalDepot (0x41A2)
+// ----------------------------------------------------------------------------
+void Client::Handle_OP_PersonalDepot(const EQApplicationPacket *app)
+{
+	// [DH_LOG_CLEANUP] Per-packet PersonalDepot received + INCOMING HEX disabled.
+	// ALWAYS log full packet hex regardless of validity
+	// Log(Logs::General, Logs::Error, "[PERSONALDEPOT] Packet received - Size=[%u] bytes, State=[%d]", app->size, (int)client_state);
+
+	// FULL HEX DUMP of incoming packet
+	// if (app->pBuffer && app->size > 0) {
+	// 	for (uint32 offset = 0; offset < app->size; offset += 16) {
+	// 		std::ostringstream line;
+	// 		line << std::setfill('0') << std::setw(4) << std::dec << offset << ": ";
+	// 		for (uint32 i = offset; i < offset + 16 && i < app->size; i++)
+	// 			line << std::hex << std::setw(2) << std::setfill('0') << (int)(uint8)app->pBuffer[i] << " ";
+	// 		Log(Logs::General, Logs::Error, "[PERSONALDEPOT] INCOMING HEX (size=%u) %s", app->size, line.str().c_str());
+	// 	}
+	// }
+
+	// Validate packet - different actions send different sizes
+	if (!app || !app->pBuffer || app->size < 4) {
+		LogError("[PERSONALDEPOT] Invalid packet");
+		return;
+	}
+
+	// Get action from packet (first uint32)
+	uint32 action = 0;
+	memcpy(&action, app->pBuffer, sizeof(uint32));
+
+	// [DH_LOG_CLEANUP] Per-packet PersonalDepot action line disabled.
+	// Log(Logs::General, Logs::Error, "[PERSONALDEPOT] action=[%u] (0x%08X), size=[%u], State=[%d]",
+	// 	action, action, app->size, (int)client_state);
+
+	switch (action) {
+		case 0: {
+			// Open Personal Depot window
+			// [DH_LOG_CLEANUP_3]
+			// Log(Logs::General, Logs::Netcode, "[PERSONALDEPOT] Window open request");
+
+			// Send action=0 packet with ownership
+			// NOTE: Slot count (action=2) is already sent at zone-in via SendDragonHoardSlotCounts()
+			auto outapp_open = new EQApplicationPacket(OP_PersonalDepot, sizeof(PersonalDepot_Response_Struct));
+			PersonalDepot_Response_Struct* response = (PersonalDepot_Response_Struct*)outapp_open->pBuffer;
+			memset(response, 0, sizeof(PersonalDepot_Response_Struct));
+			response->action = 0;
+			response->owned = 1;
+			response->item_count = 0;   // Current items stored
+			response->max_slots = 500;  // Max capacity
+
+			// [DH_LOG_CLEANUP_3]
+			// Log(Logs::General, Logs::Error, "[PERSONALDEPOT] Sending action=0 (ownership): owned=1, max_slots=500, item_count=0");
+			QueuePacket(outapp_open);
+			safe_delete(outapp_open);
+			break;
+		}
+
+		case 1: {
+			// Close Personal Depot
+			// [DH_LOG_CLEANUP_3]
+			// Log(Logs::General, Logs::Netcode, "[PERSONALDEPOT] Close request");
+
+			auto outapp = new EQApplicationPacket(OP_PersonalDepot, sizeof(PersonalDepot_Response_Struct));
+			PersonalDepot_Response_Struct* response = (PersonalDepot_Response_Struct*)outapp->pBuffer;
+			memset(response, 0, sizeof(PersonalDepot_Response_Struct));
+			response->action = 1;
+			QueuePacket(outapp);
+			safe_delete(outapp);
+			break;
+		}
+
+		case 2: {
+			// Client requests slot count (typically at zone-in State=0)
+			// [DH_LOG_CLEANUP_3]
+			// Log(Logs::General, Logs::Error, "[PERSONALDEPOT] action=2 slot count query at State=%d", (int)client_state);
+
+			auto outapp = new EQApplicationPacket(OP_PersonalDepot, sizeof(PersonalDepot_SlotCount_Struct));
+			PersonalDepot_SlotCount_Struct* response = (PersonalDepot_SlotCount_Struct*)outapp->pBuffer;
+			response->action = 2;
+			response->max_slots = 500;
+
+			// [DH_LOG_CLEANUP_3]
+			// Log(Logs::General, Logs::Error, "[PERSONALDEPOT] Responding to action=2: max_slots=500");
+			QueuePacket(outapp);
+			safe_delete(outapp);
+			break;
+		}
+
+		case 3: {
+			// Withdraw item from depot
+			// [DH_LOG_CLEANUP_3]
+			// Log(Logs::General, Logs::Netcode, "[PERSONALDEPOT] Withdraw item request");
+			Message(Chat::White, "Personal Depot withdraw not yet implemented.");
+			break;
+		}
+
+		case 4: {
+			// Header = 59 bytes (30+29); capacity at var_78+0 = offset 59. Packet = 64 bytes: [0-3]=action, [4-58]=zeros, [59-62]=500.
+			static const uint32_t PERSONAL_DEPOT_ACTION4_SIZE = 64;
+			static const uint32_t PERSONAL_DEPOT_CAPACITY_OFFSET = 59;
+			// [DH_LOG_CLEANUP] Verbose action=4 lines + OUT hex loop disabled.
+			// Log(Logs::General, Logs::Error, "[PERSONALDEPOT] INCOMING action=4 (client sent %u bytes; full hex above). Next: our response; note depot display 0/??? after send.", app->size);
+			// Log(Logs::General, Logs::Error, "[PERSONALDEPOT] OUTGOING: packet_size(arg3)=%u, capacity_offset=%u, capacity_value=%u", PERSONAL_DEPOT_ACTION4_SIZE, PERSONAL_DEPOT_CAPACITY_OFFSET, 500);
+
+			auto outapp = new EQApplicationPacket(OP_PersonalDepot, PERSONAL_DEPOT_ACTION4_SIZE);
+			memset(outapp->pBuffer, 0, PERSONAL_DEPOT_ACTION4_SIZE);
+			// Do NOT copy client packet — their 59 bytes contain 0x64 (100) at offset 18; client would read that before our 500 at 80.
+			*(uint32*)outapp->pBuffer = 4;
+			*(uint32*)(outapp->pBuffer + PERSONAL_DEPOT_CAPACITY_OFFSET) = 500;
+
+			// Full hex of outgoing action=4 packet (16 bytes per line)
+			// for (uint32 i = 0; i < PERSONAL_DEPOT_ACTION4_SIZE; i += 16) {
+			// 	std::ostringstream hex_line;
+			// 	hex_line << std::hex << std::setfill('0') << std::setw(4) << i << ": ";
+			// 	for (uint32 j = 0; j < 16 && (i + j) < PERSONAL_DEPOT_ACTION4_SIZE; j++)
+			// 		hex_line << std::setw(2) << (int)outapp->pBuffer[i + j] << " ";
+			// 	Log(Logs::General, Logs::Error, "[PERSONALDEPOT] OUT hex %s", hex_line.str().c_str());
+			// }
+			QueuePacket(outapp);
+			safe_delete(outapp);
+			// Log(Logs::General, Logs::Error, "[PERSONALDEPOT] If client sends another action=4 after this, next log block will show INCOMING.");
+			break;
+		}
+
+		case 8: {
+			// Action 8: client sets *(rcx + 0x23f4) = value at offset 4 (enable flag), then shows window
+			// [DH_LOG_CLEANUP_3]
+			// Log(Logs::General, Logs::Error, "[PERSONALDEPOT] action=8 enable query at State=%d", (int)client_state);
+
+			auto outapp = new EQApplicationPacket(OP_PersonalDepot, 8);
+			uint32* response = (uint32*)outapp->pBuffer;
+			response[0] = 8;    // action
+			response[1] = 1;    // enabled -> client stores at +0x23f4
+
+			// [DH_LOG_CLEANUP_3]
+			// Log(Logs::General, Logs::Error, "[PERSONALDEPOT] Responding to action=8: enabled=1 (writes to +0x23f4)");
+			QueuePacket(outapp);
+			safe_delete(outapp);
+			break;
+		}
+
+		default:
+			LogError("[PERSONALDEPOT] Unknown action: %u", action);
+			break;
+	}
+
+	// [DH_LOG_CLEANUP_3]
+	// Log(Logs::Detail, Logs::Netcode, "%s OP_PersonalDepot handler completed successfully", GetName());
+}
+
+// OP_DragonHoardFeatureSetup (0x687B) and OP_DragonHoardKeepAlive (0x706A) - same 80-byte payload, same response
+// 0x706A = DH heartbeat/keepalive: client sends every 30s or on open (arg2!=0). No response = window won't accept drops.
+void Client::Handle_OP_DragonHoardFeatureSetup(const EQApplicationPacket *app)
+{
+	const EmuOpcode opcode = app->GetOpcode();
+	const bool is_keepalive = (opcode == OP_DragonHoardKeepAlive);
+	(void)is_keepalive; // used when [DRAGON_HOARD_FEATURE_SETUP] packet log is re-enabled [DH_LOG_CLEANUP_3]
+	// [DH_LOG_CLEANUP_3] Per-packet + INCOMING HEX loop disabled.
+	// Log(Logs::General, Logs::Error, "[DRAGON_HOARD_FEATURE_SETUP] Packet received - Opcode=0x%04X (%s), Size=[%u] bytes, State=[%d]",
+	// 	(unsigned)opcode, is_keepalive ? "keepalive" : "feature setup", app->size, (int)client_state);
+
+	// Payload is 80 bytes (0x706A sends 82 total = 2 opcode + 80 payload)
+	const uint32_t payload_len = 80;
+	// if (app->pBuffer && app->size > 0) {
+	// 	for (uint32 offset = 0; offset < app->size && offset < (uint32)payload_len; offset += 16) {
+	// 		std::ostringstream line;
+	// 		line << std::setfill('0') << std::setw(4) << std::dec << offset << ": ";
+	// 		for (uint32 i = offset; i < offset + 16 && i < app->size && i < (uint32)payload_len; i++)
+	// 			line << std::hex << std::setw(2) << std::setfill('0') << (int)(uint8)app->pBuffer[i] << " ";
+	// 		Log(Logs::General, Logs::Error, "[DRAGON_HOARD_FEATURE_SETUP] INCOMING HEX %s", line.str().c_str());
+	// 	}
+	// }
+
+	if (opcode == OP_DragonHoardFeatureSetup) {
+		// 0x687B only: FeatureUnlock + optional window open sequence
+		// [DH_LOG_CLEANUP_3]
+		// Log(Logs::General, Logs::Error, "[DRAGON_HOARD_FEATURE_SETUP] 0x687B: Sending FeatureUnlock before response");
+		SendDragonHoardFeatureUnlock();
+	}
+	// For 0x706A (keepalive): just echo back owned=1, capacity=200 and nothing else
+
+	// Response: same opcode as request, 80 bytes, owned=1 at 72, capacity=200 at 76
+	auto outapp = new EQApplicationPacket(opcode, payload_len);
+	memset(outapp->pBuffer, 0, payload_len);
+	if (app->pBuffer && app->size >= payload_len) {
+		memcpy(outapp->pBuffer, app->pBuffer, payload_len);
+	}
+	uint32* data = (uint32*)outapp->pBuffer;
+	data[18] = 1;    // Offset 72 - owned flag (keeps DH window interactive)
+	data[19] = 200;  // Offset 76 - capacity (DH max 200)
+	// [DH_LOG_CLEANUP_3]
+	// Log(Logs::General, Logs::Error, "[DRAGON_HOARD_FEATURE_SETUP] Sending response opcode=0x%04X, owned=1 at offset 72, capacity=200 at offset 76", (unsigned)opcode);
+	this->QueuePacket(outapp);
+	safe_delete(outapp);
+
+	if (opcode == OP_DragonHoardFeatureSetup && client_state == 1) {
+		// 0x687B only: send action=2 + action=0 so client gets slot count and list
+		auto slots_pkt = new EQApplicationPacket(OP_DragonsHoard, sizeof(DragonsHoard_SlotCount_Struct));
+		DragonsHoard_SlotCount_Struct* slots = (DragonsHoard_SlotCount_Struct*)slots_pkt->pBuffer;
+		slots->action = 2;
+		slots->max_slots = 200;
+		QueuePacket(slots_pkt);
+		safe_delete(slots_pkt);
+		uint32 dh_count = database.GetDragonHoardCount(AccountID());
+		auto open_pkt = new EQApplicationPacket(OP_DragonsHoard, sizeof(DragonsHoard_Response_Struct));
+		DragonsHoard_Response_Struct* resp = (DragonsHoard_Response_Struct*)open_pkt->pBuffer;
+		memset(resp, 0, sizeof(DragonsHoard_Response_Struct));
+		resp->action = 0;
+		resp->owned = 1;
+		resp->max_slots = 200;
+		resp->item_count = dh_count;
+		QueuePacket(open_pkt);
+		safe_delete(open_pkt);
+		// [DH_LOG_CLEANUP_3]
+		// Log(Logs::General, Logs::Error, "[DRAGON_HOARD_FEATURE_SETUP] 0x687B State=1: Sent DH open sequence (action=2, action=0) item_count=%u", dh_count);
+	}
+}
+
+// Laurion unknown opcodes at DH window open (State=0) — log only, no response
+void Client::Handle_OP_DHUnknown3C92(const EQApplicationPacket *app)
+{
+	// Log(Logs::General, Logs::Error, "[DH_UNKNOWN_3C92] Packet received - Opcode=0x3C92, Size=[%u] bytes, State=[%d]", app->size, (int)client_state);
+	if (app->pBuffer && app->size > 0) {
+		for (uint32 offset = 0; offset < app->size; offset += 16) {
+			std::ostringstream line;
+			line << std::setfill('0') << std::setw(4) << std::dec << offset << ": ";
+			for (uint32 i = offset; i < offset + 16 && i < app->size; i++)
+				line << std::hex << std::setw(2) << std::setfill('0') << (int)(uint8)app->pBuffer[i] << " ";
+			// Log(Logs::General, Logs::Error, "[DH_UNKNOWN_3C92] HEX %s", line.str().c_str());
+		}
+	}
+}
+
+void Client::Handle_OP_DHUnknown6B80(const EQApplicationPacket *app)
+{
+	// Log(Logs::General, Logs::Error, "[DH_UNKNOWN_6B80] Packet received - Opcode=0x6B80, Size=[%u] bytes, State=[%d]", app->size, (int)client_state);
+	if (app->pBuffer && app->size > 0) {
+		for (uint32 offset = 0; offset < app->size; offset += 16) {
+			std::ostringstream line;
+			line << std::setfill('0') << std::setw(4) << std::dec << offset << ": ";
+			for (uint32 i = offset; i < offset + 16 && i < app->size; i++)
+				line << std::hex << std::setw(2) << std::setfill('0') << (int)(uint8)app->pBuffer[i] << " ";
+			// Log(Logs::General, Logs::Error, "[DH_UNKNOWN_6B80] HEX %s", line.str().c_str());
+		}
+	}
+}
+
+// [DH_DEPOSIT_AUDIT_6D2D] Root txt: mainloop 14026b460.txt registers 0x6D2D; payload action=1 + slot per handler comments.
+// void Client::Handle_OP_DHUnknown6D2D(const EQApplicationPacket *app)  // [DH_RENAME_6D2D] old function name
+void Client::Handle_OP_DragonsHoardClient(const EQApplicationPacket *app)
+{
+	// [DH_LOG_CLEANUP] Per-packet 6D2D received + HEX dump disabled.
+	// Log(Logs::General, Logs::Error, "[DH_UNKNOWN_6D2D] Packet received - Opcode=0x6D2D, Size=[%u] bytes, State=[%d]", app->size, (int)client_state);
+	// [DH_CONNECTED_GUARD_FIX] Top-level Connected() guard moved into action == 1 only (deposit action == 3 may run before full zone-in).
+	// Do not send item packets until client is fully zoned in (CLIENT_CONNECTED). 6D2D can fire during loading screen and client crashes on item packets.
+	// if (!Connected()) {
+	// 	// Log(Logs::General, Logs::Error, "[DH_UNKNOWN_6D2D] Client not fully zoned in (state=%d), skipping item list send", (int)client_state);
+	// 	return;
+	// }
+	// if (app->pBuffer && app->size > 0) {
+	// 	for (uint32 offset = 0; offset < app->size; offset += 16) {
+	// 		std::ostringstream line;
+	// 		line << std::setfill('0') << std::setw(4) << std::dec << offset << ": ";
+	// 		for (uint32 i = offset; i < offset + 16 && i < app->size; i++)
+	// 			line << std::hex << std::setw(2) << std::setfill('0') << (int)(uint8)app->pBuffer[i] << " ";
+	// 		Log(Logs::General, Logs::Error, "[DH_UNKNOWN_6D2D] HEX %s", line.str().c_str());
+	// 	}
+	// }
+	// Payload: uint32 action, uint32 slot. action=1 + slot=0xFFFFFFFF = client requesting DH item list (no specific slot).
+	// eqlib: DragonHoardPopulated (0x23e8) may be set only after client receives actual item list data (DragonHoardBuffer at 0x23c0).
+	// Send both (1) action=8 so client enables, and (2) action=0 with owned=1, item_count from DB, max_slots=200.
+	if (app->pBuffer && app->size >= 8) {
+		uint32 action = 0;
+		uint32 slot = 0;
+		memcpy(&action, app->pBuffer, sizeof(uint32));
+		memcpy(&slot, app->pBuffer + 4, sizeof(uint32));
+		// [DH_LOG_CLEANUP] Per-6D2D parsed action line disabled.
+		// Log(Logs::General, Logs::Error, "[DH_UNKNOWN_6D2D] Parsed action=%u slot=%u (0x%08X) - requesting DH item list", action, slot, slot);
+		if (action == 1) {
+			// [DH_CONNECTED_GUARD_FIX] Do not send item packets until client is fully zoned in (CLIENT_CONNECTED). 6D2D can fire during loading screen and client crashes on item packets.
+			if (!Connected()) {
+				// Log(Logs::General, Logs::Error, "[DH_UNKNOWN_6D2D] Client not fully zoned in (state=%d), skipping item list send", (int)client_state);
+				return;
+			}
+			// 1) action=8 for DH enable — [DH_DEPOSIT_GATE_FIX] use byte[4]=0 (see commented line below; old note was byte[4]=1 for window+0x356).
+			// // 1) action=8: byte[4]=1 for window+0x356 (inner gate that allows deposits)
+			// (commented out — replaced by new version below with byte[4]=1)
+			// auto outapp = new EQApplicationPacket(OP_DragonsHoard, 5);
+			// memset(outapp->pBuffer, 0, 5);
+			// uint32* data = (uint32*)outapp->pBuffer;
+			// data[0] = 8;
+			// outapp->pBuffer[4] = 1;
+			// LogInfo("[DH_6D2D] Sending action=8 byte[4]=1 (window+0x356)");
+			// QueuePacket(outapp);
+			// safe_delete(outapp);
+			// // New version: action=8 with byte[4]=1
+			{
+				auto outapp = new EQApplicationPacket(OP_DragonsHoard, 5);
+				memset(outapp->pBuffer, 0, 5);
+				uint32* data = (uint32*)outapp->pBuffer;
+				data[0] = 8;
+				// [DH_DEPOSIT_GATE_FIX] byte[4]=1 skips the +0x23e8 flag set in sub_1401f87f0 and breaks the deposit gate in sub_1401080c0.
+				// outapp->pBuffer[4] = 1;
+				outapp->pBuffer[4] = 0;
+				// LogInfo("[DH_6D2D] action=8 byte[4]=1 sent (window+0x356)");
+				QueuePacket(outapp);
+				safe_delete(outapp);
+			}
+			// [DH_DOUBLE_ENABLE] Second action=8: byte[4]=0 (above) sets client +0x23e8 (deposit gate / hoard enabled); byte[4]=1 sets +0x356 (window ready flag).
+			{
+				auto outapp_b = new EQApplicationPacket(OP_DragonsHoard, 5);
+				memset(outapp_b->pBuffer, 0, 5);
+				uint32 *data_b = (uint32 *)outapp_b->pBuffer;
+				data_b[0] = 8;
+				outapp_b->pBuffer[4] = 1;
+				QueuePacket(outapp_b);
+				safe_delete(outapp_b);
+			}
+			// 2) action=0: same list response as window open — item_count from dragonhoard_items
+			uint32 dh_count_6d2d = database.GetDragonHoardCount(AccountID());
+			auto outapp0 = new EQApplicationPacket(OP_DragonsHoard, sizeof(DragonsHoard_Response_Struct));
+			DragonsHoard_Response_Struct* resp0 = (DragonsHoard_Response_Struct*)outapp0->pBuffer;
+			memset(resp0, 0, sizeof(DragonsHoard_Response_Struct));
+			resp0->action = 0;
+			resp0->owned = 1;
+			resp0->max_slots = 200;
+			resp0->item_count = dh_count_6d2d;
+			// Log(Logs::General, Logs::Error, "[DH_UNKNOWN_6D2D] Sending OP_DragonsHoard action=0 (owned=1, max_slots=200, item_count=%u) as item-list response", dh_count_6d2d);
+			QueuePacket(outapp0);
+			safe_delete(outapp0);
+			// (commented out — replaced by new guarded call below)
+			// if (Connected()) {
+			// 	LogInfo("[DH_6D2D] Sending Dragon's Hoard item list (Connected)");
+			// 	SendDragonHoardItemList();
+			// }
+			// [DH_6D2D_ITEMS]
+			if (Connected()) {
+				// LogInfo("[DH_6D2D] SendDragonHoardItemList() called (Connected)");
+				SendDragonHoardItemList();
+			}
+		}
+		else if (action == 3) {
+			// [DH_ACTION3_DEPOSIT] deposit-from-cursor — same sequence as Handle_OP_MoveItem Dragon's Hoard intercept (to_slot 5000..5199)
+			// [DH_LOG_CLEANUP] Per-packet action=3 HEX dump disabled.
+			// if (app->pBuffer && app->size > 0) {
+			// 	for (uint32 offset = 0; offset < app->size; offset += 16) {
+			// 		std::ostringstream line;
+			// 		line << std::setfill('0') << std::setw(4) << std::dec << offset << ": ";
+			// 		for (uint32 i = offset; i < offset + 16 && i < app->size; i++)
+			// 			line << std::hex << std::setw(2) << std::setfill('0') << (int)(uint8)app->pBuffer[i] << " ";
+			// 		Log(Logs::General, Logs::Error, "[DH_ACTION3_DEPOSIT] %s", line.str().c_str());
+			// 	}
+			// }
+			const int16 from_slot = EQ::invslot::slotCursor;
+			const EQ::ItemInstance *inst = GetInv().GetItem(from_slot);
+			if (!inst || !inst->GetItem()) {
+				Log(Logs::General, Logs::Error, "[DH_ACTION3_DEPOSIT] no item on cursor (GetInv().GetItem(slotCursor) null)");
+				return;
+			}
+			uint64 client_serial = (uint64)inst->GetSerialNumber();
+			if (client_serial == 0) {
+				client_serial = (uint64)(uint32)inst->GetSerialNumber();
+			}
+			uint32 account_id = AccountID();
+			uint32 hoard_count = database.GetDragonHoardCount(account_id);
+			if (hoard_count >= 200) {
+				Message(Chat::Red, "Dragon's Hoard is full.");
+				return;
+			}
+			EQ::ItemInstance *existing = database.GetDragonHoardItemBySerial(account_id, client_serial);
+			if (existing) {
+				// [DH_DEPOSIT_RESYNC_FIX] Failed deposit can leave dragonhoard_items row while item stayed on cursor — allow cleanup when IDs + serial match.
+				const bool stale_same_cursor_item =
+					(existing->GetItem() != nullptr && inst->GetItem() != nullptr &&
+					 existing->GetItem()->ID == inst->GetItem()->ID &&
+					 static_cast<uint64>(existing->GetSerialNumber()) == client_serial);
+				if (stale_same_cursor_item) {
+					if (!database.DeleteDragonHoardItemBySerial(account_id, client_serial)) {
+						delete existing;
+						LogError("[DH_DEPOSIT_RESYNC_FIX] stale hoard row for serial {} but DELETE failed", client_serial);
+						Message(Chat::Red, "Dragon's Hoard could not sync that item; try again or /camp.");
+						return;
+					}
+					delete existing;
+					existing = nullptr;
+				} else {
+					delete existing;
+					Message(Chat::Red, "That item is already in your Dragon's Hoard.");
+					return;
+				}
+			}
+			int16 dh_slot = database.GetNextDragonHoardSlot(account_id);
+			if (dh_slot < 0) {
+				Message(Chat::Red, "Dragon's Hoard is full.");
+				return;
+			}
+			if (!database.SaveDragonHoardItem(account_id, dh_slot, inst)) {
+				Message(Chat::Red, "Failed to save item to Dragon's Hoard.");
+				return;
+			}
+			// uint32 move_stack = (inst->IsStackable() && inst->GetCharges() > 0) ? static_cast<uint32>(inst->GetCharges()) : 0;
+			DeleteItemInInventory(from_slot, 0, false, true);
+			// [DH_NO_ECHO] OP_MoveItem deposit echo disabled — refresh via SendDragonHoardItemList [DH_DEPOSIT_REFRESH].
+			// const uint32 dh_client_slot = 5000 + static_cast<uint32>(dh_slot);
+			// auto move_confirm = new EQApplicationPacket(OP_MoveItem, sizeof(MoveItem_Struct));
+			// MoveItem_Struct *move_out = (MoveItem_Struct *)move_confirm->pBuffer;
+			// // [DH_DEPOSIT_RESYNC_FIX] Echo must use server cursor index (EQ::invslot::slotCursor); Laurion OUT patch maps it to client InventorySlot (e.g. Slot=35).
+			// move_out->from_slot = static_cast<uint32>(EQ::invslot::slotCursor);
+			// move_out->to_slot = dh_client_slot;
+			// move_out->number_in_stack = move_stack;
+			// QueuePacket(move_confirm);
+			// safe_delete(move_confirm);
+			uint32 new_count = database.GetDragonHoardCount(account_id);
+			auto outapp = new EQApplicationPacket(OP_DragonsHoard, sizeof(DragonsHoard_Response_Struct));
+			DragonsHoard_Response_Struct *response = (DragonsHoard_Response_Struct *)outapp->pBuffer;
+			memset(response, 0, sizeof(DragonsHoard_Response_Struct));
+			response->action = 0;
+			response->owned = 1;
+			response->max_slots = 200;
+			response->item_count = new_count;
+			QueuePacket(outapp);
+			safe_delete(outapp);
+			// [DH_DEPOSIT_REFRESH] Repopulate DH window after deposit ([DH_NO_ECHO] MoveItem echo commented out).
+			if (Connected()) {
+				SendDragonHoardItemList();
+			}
+			Message(Chat::White, "Item deposited to Dragon's Hoard.");
+			return;
+		}
+	}
+}
+
+void Client::Handle_OP_DHUnknown7F65(const EQApplicationPacket *app)
+{
+	// Log(Logs::General, Logs::Error, "[DH_UNKNOWN_7F65] Packet received - Opcode=0x7F65, Size=[%u] bytes, State=[%d]", app->size, (int)client_state);
+	if (app->pBuffer && app->size > 0) {
+		for (uint32 offset = 0; offset < app->size; offset += 16) {
+			std::ostringstream line;
+			line << std::setfill('0') << std::setw(4) << std::dec << offset << ": ";
+			for (uint32 i = offset; i < offset + 16 && i < app->size; i++)
+				line << std::hex << std::setw(2) << std::setfill('0') << (int)(uint8)app->pBuffer[i] << " ";
+			// Log(Logs::General, Logs::Error, "[DH_UNKNOWN_7F65] HEX %s", line.str().c_str());
+		}
+	}
+}
+
+void Client::Handle_OP_PersonalDepotFeatureSetup(const EQApplicationPacket *app)
+{
+	Log(Logs::General, Logs::Netcode, "[PERSONAL_DEPOT_FEATURE_SETUP] Packet received - Size=[%u] bytes, State=[%d]", app->size, (int)client_state);
+	
+	// Hex dump of incoming packet
+	if (app->pBuffer && app->size > 0) {
+		for (uint32 offset = 0; offset < app->size && offset < 148; offset += 16) {
+			std::ostringstream line;
+			line << std::setfill('0') << std::setw(4) << std::dec << offset << ": ";
+			for (uint32 i = offset; i < offset + 16 && i < app->size && i < 148; i++)
+				line << std::hex << std::setw(2) << std::setfill('0') << (int)(uint8)app->pBuffer[i] << " ";
+			Log(Logs::General, Logs::Netcode, "[PERSONAL_DEPOT_FEATURE_SETUP] Incoming HEX %s", line.str().c_str());
+		}
+	}
+	
+	// Echo back the packet with capacity modifications
+	auto outapp = new EQApplicationPacket(OP_PersonalDepotFeatureSetup, 148);
+	memset(outapp->pBuffer, 0, 148);
+	
+	// Copy original packet if we received one
+	if (app->pBuffer && app->size >= 148) {
+		memcpy(outapp->pBuffer, app->pBuffer, 148);
+	}
+	
+	// Try setting capacity at various offsets
+	uint32* data = (uint32*)outapp->pBuffer;
+	data[0] = 500;  // Offset 0
+	data[1] = 500;  // Offset 4
+	data[2] = 500;  // Offset 8
+	data[10] = 500; // Offset 40
+	
+	Log(Logs::General, Logs::Netcode, "[PERSONAL_DEPOT_FEATURE_SETUP] Sending response with capacity=500 at test offsets");
+	this->QueuePacket(outapp);
+	safe_delete(outapp);
+}
+
+void Client::Handle_OP_FeatureSetup3(const EQApplicationPacket *app)
+{
+	Log(Logs::General, Logs::Error, "[FEATURE_SETUP3] CRITICAL PACKET RECEIVED - Size=[%u] bytes, State=[%d]", app->size, (int)client_state);
+	
+	// Hex dump of incoming packet
+	if (app->pBuffer && app->size > 0) {
+		for (uint32 offset = 0; offset < app->size && offset < 16; offset += 16) {
+			std::ostringstream line;
+			line << std::setfill('0') << std::setw(4) << std::dec << offset << ": ";
+			for (uint32 i = offset; i < offset + 16 && i < app->size; i++)
+				line << std::hex << std::setw(2) << std::setfill('0') << (int)(uint8)app->pBuffer[i] << " ";
+			Log(Logs::General, Logs::Error, "[FEATURE_SETUP3] Incoming HEX %s", line.str().c_str());
+		}
+		// Decode the values
+		if (app->size >= 16) {
+			uint32* values = (uint32*)app->pBuffer;
+			Log(Logs::General, Logs::Error, "[FEATURE_SETUP3] Decoded: [0]=%u, [4]=%u, [8]=%u (DH?), [12]=%u (Depot?)", 
+				values[0], values[1], values[2], values[3]);
+		}
+	}
+	
+	// Send response with 500 at offsets 8 and 12
+	auto outapp = new EQApplicationPacket(OP_FeatureSetup3, 16);
+	memset(outapp->pBuffer, 0, 16);
+	
+	// Copy the first 8 bytes from the client's packet (headers/flags)
+	if (app->pBuffer && app->size >= 16) {
+		memcpy(outapp->pBuffer, app->pBuffer, 8);
+	} else {
+		// Default values if client didn't send full packet
+		uint32* data = (uint32*)outapp->pBuffer;
+		data[0] = 0x0101;  // First 4 bytes from user's example
+		data[1] = 0x05F1BF;  // Second 4 bytes from user's example
+	}
+	
+	// Set slot counts at offsets 8 and 12 (DH=200 base, Depot=500 for now)
+	uint32* data = (uint32*)outapp->pBuffer;
+	data[2] = 200;  // Offset 8 - Dragon's Hoard capacity
+	data[3] = 500;  // Offset 12 - Personal Depot capacity
+	
+	Log(Logs::General, Logs::Error, "[FEATURE_SETUP3] Sending response with DH=200 at offset 8, Depot=500 at offset 12");
+	
+	// Hex dump outgoing packet
+	for (uint32 offset = 0; offset < 16; offset += 16) {
+		std::ostringstream line;
+		line << std::setfill('0') << std::setw(4) << std::dec << offset << ": ";
+		for (uint32 i = 0; i < 16; i++)
+			line << std::hex << std::setw(2) << std::setfill('0') << (int)(uint8)outapp->pBuffer[i] << " ";
+		Log(Logs::General, Logs::Error, "[FEATURE_SETUP3] Outgoing HEX %s", line.str().c_str());
+	}
+	
+	this->QueuePacket(outapp);
+	safe_delete(outapp);
+}
+
+void Client::Handle_OP_FeatureSetup4(const EQApplicationPacket *app)
+{
+	Log(Logs::General, Logs::Error, "[FEATURE_SETUP4] Packet received - Size=[%u] bytes, State=[%d] (trigger: send depot capacity)", app->size, (int)client_state);
+	
+	if (app->pBuffer && app->size >= 2) {
+		Log(Logs::General, Logs::Error, "[FEATURE_SETUP4] Incoming 2 bytes: 0x%02X 0x%02X", 
+			(int)app->pBuffer[0], (int)app->pBuffer[1]);
+	}
+	
+	// 0x229c trigger: 64-byte packet; header=59 bytes, capacity at offset 59.
+	static const uint32_t PERSONAL_DEPOT_ACTION4_SIZE = 64;
+	static const uint32_t PERSONAL_DEPOT_CAPACITY_OFFSET = 59;
+	auto outapp = new EQApplicationPacket(OP_PersonalDepot, PERSONAL_DEPOT_ACTION4_SIZE);
+	memset(outapp->pBuffer, 0, PERSONAL_DEPOT_ACTION4_SIZE);
+	*(uint32*)outapp->pBuffer = 4;
+	*(uint32*)(outapp->pBuffer + PERSONAL_DEPOT_CAPACITY_OFFSET) = 500;
+	Log(Logs::General, Logs::Error, "[FEATURE_SETUP4] OUTGOING: packet_size(arg3)=%u, capacity_offset=%u", PERSONAL_DEPOT_ACTION4_SIZE, PERSONAL_DEPOT_CAPACITY_OFFSET);
+	for (uint32 i = 0; i < PERSONAL_DEPOT_ACTION4_SIZE; i += 16) {
+		std::ostringstream hex_line;
+		hex_line << std::hex << std::setfill('0') << std::setw(4) << i << ": ";
+		for (uint32 j = 0; j < 16 && (i + j) < PERSONAL_DEPOT_ACTION4_SIZE; j++)
+			hex_line << std::setw(2) << (int)outapp->pBuffer[i + j] << " ";
+		Log(Logs::General, Logs::Error, "[FEATURE_SETUP4] OUT hex %s", hex_line.str().c_str());
+	}
+	this->QueuePacket(outapp);
+	safe_delete(outapp);
+}
+

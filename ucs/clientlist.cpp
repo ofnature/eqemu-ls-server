@@ -663,67 +663,15 @@ void Clientlist::Process()
 
 				VARSTRUCT_DECODE_STRING(MailBox, PacketBuffer);
 
-				if (strlen(PacketBuffer) != 9) {
-					LogInfo("Mail key is the wrong size. Version of world incompatible with UCS.");
-					KeyValid = false;
-					break;
+// Allow keys larger than 9, but protect against buffer overflow (Key[64])
+			if (strlen(PacketBuffer) >= 64) {
+    			LogError("Mail key is too long (Buffer Overflow Protection). Key: [{}]", PacketBuffer ? PacketBuffer : "null");
+    			KeyValid = false;
+    			break;
 				}
-				ConnectionTypeIndicator = VARSTRUCT_DECODE_TYPE(char, PacketBuffer);
-
-				(*it)->SetConnectionType(ConnectionTypeIndicator);
-
-				VARSTRUCT_DECODE_STRING(Key, PacketBuffer);
-
-				std::string MailBoxString = MailBox, CharacterName;
-
-				// Strip off the SOE.EQ.<shortname>.
-				//
-				std::string::size_type LastPeriod = MailBoxString.find_last_of(".");
-
-				if (LastPeriod == std::string::npos) {
-					CharacterName = MailBoxString;
-				}
-				else {
-					CharacterName = MailBoxString.substr(LastPeriod + 1);
-				}
-
-				LogInfo("Received login for user [{}] with key [{}]",
-					MailBox, Key);
-
-				if (!database.VerifyMailKey(CharacterName, (*it)->ClientStream->GetRemoteIP(), Key)) {
-					LogError("Chat Key for [{}] does not match, closing connection.", MailBox);
-					KeyValid = false;
-					break;
-				}
-
-				(*it)->SetAccountID(database.FindAccount(CharacterName.c_str(), (*it)));
-
-				database.GetAccountStatus((*it));
-
-				if ((*it)->GetConnectionType() == ConnectionTypeCombined) {
-					(*it)->SendFriends();
-				}
-
-				(*it)->SendMailBoxes();
-
+			}
 				CheckForStaleConnections((*it));
 				break;
-			}
-			case OP_Mail: {
-				std::string command_string = (const char *)app->pBuffer + 1;
-				bool command_directed = false;
-				if (command_string.empty()) {
-					break;
-				}
-
-				if (Strings::Contains(Strings::ToLower(command_string), "leave")) {
-					command_directed = true;
-				}
-
-				ProcessOPMailCommand((*it), command_string, command_directed);
-				break;
-			}
-
 			default: {
 				LogInfo("Unhandled chat opcode {:#04x}", opcode);
 				break;

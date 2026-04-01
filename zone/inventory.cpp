@@ -978,6 +978,11 @@ int32 Client::GetAugmentIDAt(int16 slot_id, uint8 augslot) {
 
 void Client::SendCursorBuffer()
 {
+	// [DH_LOG_CLEANUP] Per-call SendCursorBuffer Error log disabled (was very noisy after DH deposit path).
+	// [DH_CURSOR_BUF_LOG]
+	// LogError("[DH_CURSOR_BUF] SendCursorBuffer called, cursor_empty=%d, client_version=%d",
+	// 	GetInv().CursorEmpty() ? 1 : 0,
+	// 	(int)ClientVersion());
 	// Temporary work-around for the RoF+ Client Buffer
 	// Instead of dealing with client moving items in cursor buffer,
 	// we can just send the next item in the cursor buffer to the cursor.
@@ -1016,6 +1021,10 @@ void Client::SendCursorBuffer()
 	}
 	else {
 		SendItemPacket(EQ::invslot::slotCursor, test_inst, ItemPacketLimbo);
+		// [DH_CURSOR_77] Laurion: DH window container (slot 0x23) may need cursor item via 0x77-style packet in addition to limbo.
+		if (ClientVersion() >= EQ::versions::ClientVersion::Laurion && test_inst != nullptr) {
+			SendItemPacket(EQ::invslot::slotCursor, test_inst, ItemPacketDragonHoard);
+		}
 	}
 }
 
@@ -2301,6 +2310,14 @@ bool Client::SwapItem(MoveItem_Struct* move_in) {
 	if (dst_slot_id == EQ::invslot::slotCursor) {
 		auto s = m_inv.cursor_cbegin(), e = m_inv.cursor_cend();
 		database.SaveCursor(character_id, s, e);
+		// [DH_CURSOR_77_REVERT] Commented out [DH_CURSOR_77_V3]: sending ItemPacketDragonHoard (0x77) on every cursor pick-up in SwapItem is wrong — spams DH layout for non-DH moves.
+		// // [DH_CURSOR_77_V3] Laurion: DH window indexes cursor at 0x23 (35), not server slotCursor (33).
+		// if (ClientVersion() >= EQ::versions::ClientVersion::Laurion) {
+		// 	EQ::ItemInstance *cursor_inst = GetInv().GetItem(EQ::invslot::slotCursor);
+		// 	if (cursor_inst) {
+		// 		SendItemPacket(35, cursor_inst, ItemPacketDragonHoard);
+		// 	}
+		// }
 	}
 	else {
 		database.SaveInventory(character_id, m_inv.GetItem(dst_slot_id), dst_slot_id);
@@ -3177,7 +3194,12 @@ void Client::SendItemPacket(int16 slot_id, const EQ::ItemInstance* inst, ItemPac
 		return;
 
 	if (packet_type != ItemPacketMerchant) {
-		if (slot_id <= EQ::invslot::POSSESSIONS_END && slot_id >= EQ::invslot::POSSESSIONS_BEGIN) {
+		// Dragon's Hoard (Type=38) slots 5000-5199 — skip validation so 5001+ are not rejected by bank check
+		if (slot_id >= 5000 && slot_id <= 5199) {
+			// [DH_LOG_CLEANUP_2] Verbose DH slot allow log disabled.
+			// Log(Logs::General, Logs::Error, "[DH_ITEMS] SendItemPacket allowing slot %d (5000-5199)", (int)slot_id);
+		}
+		else if (slot_id <= EQ::invslot::POSSESSIONS_END && slot_id >= EQ::invslot::POSSESSIONS_BEGIN) {
 			if ((((uint64)1 << slot_id) & GetInv().GetLookup()->PossessionsBitmask) == 0) {
 				LogError("Item not sent to merchant : slot [{}]", slot_id);
 				return;

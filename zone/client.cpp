@@ -17,9 +17,14 @@
 */
 #include "../common/global_define.h"
 #include <iostream>
+#include <sstream>
+#include <iomanip>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <vector>
+#include <thread>
+#include <chrono>
 
 // for windows compile
 #ifndef _WINDOWS
@@ -75,7 +80,8 @@ extern volatile bool RunLoops;
 #include "dialogue_window.h"
 #include "../common/zone_store.h"
 #include "../common/skill_caps.h"
-
+#include "../common/packet_dump.h"
+#include "../common/opcodemgr.h"
 
 extern QueryServ* QServ;
 extern EntityList entity_list;
@@ -8601,7 +8607,7 @@ void Client::SendMembership() {
 		mc->membership = 2;				//Hardcode to gold for now. We don't use anything else.
 		mc->races = 0x1ffff;			// Available Races (4110 for silver)
 		mc->classes = 0x1ffff;			// Available Classes (4614 for silver) - Was 0x101ffff
-		mc->entrysize = 21;				// Number of membership setting entries below
+		mc->entrysize = 33;				// Number of membership setting entries (Laurion extended to 33 for storage)
 		mc->entries[0] = 0xffffffff;	// Max AA Restriction
 		mc->entries[1] = 0xffffffff;	// Max Level Restriction
 		mc->entries[2] = 0xffffffff;	// Max Char Slots per Account (not used by client?)
@@ -8623,8 +8629,425 @@ void Client::SendMembership() {
 		mc->entries[18] = 1;			// 0 for Silver
 		mc->entries[19] = 0xffffffff;	// 0 for Silver
 		mc->entries[20] = 0xffffffff;	// 0 for Silver
+		// Laurion's Song extended entries (21-32)
+		mc->entries[21] = 0;			// Unknown
+		mc->entries[22] = 0;			// Unknown
+		mc->entries[23] = 0;			// Unknown
+		mc->entries[24] = 0;			// Unknown
+		mc->entries[25] = 0;			// Unknown
+		mc->entries[26] = 0;			// Unknown
+		mc->entries[27] = 0;			// Unknown
+		mc->entries[28] = 0;			// Unknown
+		mc->entries[29] = 200;			// Dragon's Hoard capacity (account-bound)
+		mc->entries[30] = 0;			// Unknown
+		mc->entries[31] = 500;			// Personal Tradeskill Depot capacity (account-bound)
+		mc->entries[32] = 0;			// Unknown
 		mc->exit_url_length = 0;
 		//mc->exit_url = 0; // Used on Live: "http://www.everquest.com/free-to-play/exit-silver"
+		
+		// Note: DragonHoard and TradeskillDepot slots (entries[29] and [31]) are set in the
+		// ENCODE function in laurion.cpp, not here. The base struct only has 21 entries.
+
+		// [DH_LOG_CLEANUP_2] [MEMBERSHIP_PRE_ENCODE] disabled.
+		// LogInfo("[MEMBERSHIP_PRE_ENCODE] entrysize=[{}], packet_size=[{}] bytes (before ENCODE)",
+		//     mc->entrysize, outapp->size);
+
+		QueuePacket(outapp);
+		safe_delete(outapp);
+	}
+}
+
+void Client::SendMembershipSettings() {
+	if (m_ClientVersion >= EQ::versions::ClientVersion::Laurion) {
+		auto outapp = new EQApplicationPacket(OP_SendMembershipDetails, sizeof(Membership_Details_Struct));
+		Membership_Details_Struct* mds = (Membership_Details_Struct*)outapp->pBuffer;
+
+		// CRITICAL: The settings array must match laurion.cpp ENCODE(OP_SendMembershipDetails)
+		// It contains 96 settings (not 66!) including Dragon's Hoard/Depot slot counts
+		// Format: {setting_index, setting_id, setting_value}
+		int32 settings[96][3] = {
+			{ 0, 0, 200 },  { 1, 0, 500 }, { 0, 1, -1 },   { 1, 1, -1 },   // Dragon's Hoard=200, Depot=500 (GOLD tier)
+			{ 0, 2, 2 },    { 2, 0, -1 },   { 3, 0, -1 },   { 1, 2, 4 },
+			{ 0, 3, 1 },    { 2, 1, -1 },   { 3, 1, -1 },   { 1, 3, 1 },
+			{ 0, 4, -1 },   { 2, 2, -1 },   { 3, 2, -1 },   { 1, 4, -1 },
+			{ 0, 5, -1 },   { 2, 3, -1 },   { 3, 3, -1 },   { 1, 5, -1 },
+			{ 0, 6, 0 },    { 2, 4, -1 },   { 3, 4, -1 },   { 1, 6, 0 },
+			{ 0, 7, 1 },    { 2, 5, -1 },   { 3, 5, -1 },   { 1, 7, 1 },
+			{ 0, 8, 1 },    { 2, 6, 1 },    { 3, 6, 1 },    { 1, 8, 1 },
+			{ 0, 9, 5 },    { 2, 7, 1 },    { 3, 7, 1 },    { 1, 9, 5 },
+			{ 0, 10, 0 },   { 2, 8, 1 },    { 3, 8, 1 },    { 0, 11, -1 },
+			{ 1, 10, 1 },   { 2, 9, -1 },   { 3, 9, -1 },   { 0, 12, -1 },
+			{ 1, 11, -1 },  { 2, 10, 1 },   { 3, 10, 1 },   { 0, 13, 0 },
+			{ 1, 12, -1 },  { 2, 11, -1 },  { 3, 11, -1 },  { 0, 14, 0 },
+			{ 1, 13, 1 },   { 2, 12, -1 },  { 3, 12, -1 },  { 0, 15, 0 },
+			{ 1, 14, 0 },   { 2, 13, 1 },   { 3, 13, 1 },   { 0, 16, 0 },
+			{ 1, 15, 0 },   { 2, 14, 1 },   { 3, 14, 1 },   { 0, 17, 0 },
+			{ 1, 16, 1 },   { 2, 15, 1 },   { 3, 15, 1 },   { 0, 18, 0 },
+			{ 1, 17, 0 },   { 2, 16, 1 },   { 3, 16, 1 },   { 0, 19, 0 },
+			{ 1, 18, 0 },   { 2, 17, 1 },   { 3, 17, 1 },   { 0, 20, 0 },
+			{ 1, 19, 0 },   { 2, 18, 1 },   { 3, 18, 1 },   { 0, 21, 0 },
+			{ 1, 20, 0 },   { 2, 19, -1 },  { 3, 19, -1 },  { 0, 22, 0 },
+			{ 1, 21, 0 },   { 2, 20, -1 },  { 3, 20, -1 },  { 2, 21, 0 },
+			{ 0, 23, 0 },   { 1, 22, 0 },   { 3, 21, 0 },   { 2, 22, 0 },
+			{ 1, 23, 0 },   { 3, 22, 0 },   { 2, 23, 0 },   { 3, 23, 0 }
+		};
+
+		mds->membership_setting_count = 96;  // CRITICAL: Was 66, should be 96!
+		for (int i = 0; i < 96; ++i) {
+			mds->settings[i].setting_index = settings[i][0];
+			mds->settings[i].setting_id = settings[i][1];
+			mds->settings[i].setting_value = settings[i][2];
+		}
+
+		mds->race_entry_count = 15;
+		mds->class_entry_count = 15;
+
+		uint32 cur_purchase_id = 90287;
+		uint32 cur_purchase_id2 = 90301;
+		uint32 cur_bitwise_value = 1;
+		for (int entry_id=0; entry_id < 15; entry_id++)
+		{
+			if (entry_id == 0)
+			{
+				mds->membership_races[entry_id].purchase_id = 1;
+				mds->membership_races[entry_id].bitwise_entry = 0x1ffff;
+				mds->membership_classes[entry_id].purchase_id = 1;
+				mds->membership_classes[entry_id].bitwise_entry = 0x1ffff;
+			}
+			else
+			{
+				mds->membership_races[entry_id].purchase_id = cur_purchase_id;
+
+				if (entry_id < 3)
+				{
+					mds->membership_classes[entry_id].purchase_id = cur_purchase_id;
+				}
+				else
+				{
+					mds->membership_classes[entry_id].purchase_id = cur_purchase_id2;
+					cur_purchase_id2++;
+				}
+
+				if (entry_id == 1)
+				{
+					mds->membership_races[entry_id].bitwise_entry = 4110;
+					mds->membership_classes[entry_id].bitwise_entry = 4614;
+				}
+				else if (entry_id == 2)
+				{
+					mds->membership_races[entry_id].bitwise_entry = 4110;
+					mds->membership_classes[entry_id].bitwise_entry = 4614;
+				}
+				else
+				{
+					if (entry_id == 12)
+					{
+						// Live Skips 4096
+						cur_bitwise_value *= 2;
+					}
+					mds->membership_races[entry_id].bitwise_entry = cur_bitwise_value;
+					mds->membership_classes[entry_id].bitwise_entry = cur_bitwise_value;
+				}
+				cur_purchase_id++;
+			}
+			cur_bitwise_value *= 2;
+		}
+		mds->exit_url_length = 0;
+		mds->exit_url_length2 = 0;
+
+		// [DH_LOG_CLEANUP_3]
+		// LogInfo("[MEMBERSHIP_DETAILS] Sending OP_SendMembershipDetails - size=[{}] bytes, settings_count=[{}]",
+		//     outapp->size, mds->membership_setting_count);
+		// LogInfo("[MEMBERSHIP_DETAILS] Dragon's Hoard capacity: settings[0] = {}", mds->settings[0].setting_value);
+		// LogInfo("[MEMBERSHIP_DETAILS] Personal Depot capacity: settings[1] = {}", mds->settings[1].setting_value);
+
+		QueuePacket(outapp);
+		safe_delete(outapp);
+	}
+}
+
+// Send Feature Unlock Packet (OP_FeatureUnlock / 0x4451)
+// Unlocks client-side features like Dragon's Hoard by setting feature flags
+void Client::SendDragonHoardFeatureUnlock() {
+	// [DH_LOG_CLEANUP_2] [FEATURE_UNLOCK_DEBUG] + verbose [FEATURE_UNLOCK] hex/packet logs disabled (no failure paths here).
+	// Log(Logs::General, Logs::Error, "[FEATURE_UNLOCK_DEBUG] Function called - m_ClientVersion=%d, Laurion=%d",
+	// 	(int)m_ClientVersion, (int)EQ::versions::ClientVersion::Laurion);
+
+	if (m_ClientVersion >= EQ::versions::ClientVersion::Laurion) {
+		const uint32 FEATURE_ID_DRAGONS_HOARD = 0x1ec5fb;
+		const uint32 FEATURE_ID_TRADESKILL_DEPOT_1 = 0x1ecb4d;
+		const uint32 FEATURE_ID_TRADESKILL_DEPOT_2 = 0x1ecbd4;
+		const uint32 FEATURE_COUNT = 1;
+		const uint32 NUM_FEATURES = 3;  // Dragon's Hoard + 2 Depot features
+		
+		// Packet structure: 1 byte header + 4 bytes count + (8 bytes per entry)
+		uint32 packet_size = 1 + 4 + (NUM_FEATURES * 8); // 29 bytes total
+		auto outapp = new EQApplicationPacket(OP_FeatureUnlock, packet_size);
+		
+		uint8* buffer = outapp->pBuffer;
+		*buffer++ = 0; // header byte
+		
+		// Write count
+		*(uint32*)buffer = NUM_FEATURES;
+		buffer += 4;
+		
+		// Write Dragon's Hoard entry — client sub_14061e830 checks exactly 0x1ec5fb; 1-bit difference = silent fail
+		*(uint32*)buffer = FEATURE_ID_DRAGONS_HOARD;
+		// Log(Logs::General, Logs::Error, "[FEATURE_UNLOCK] DH feature_id sent: 0x%08X (bytes at offset 5: %02X %02X %02X %02X)",
+		// 	FEATURE_ID_DRAGONS_HOARD, (unsigned)outapp->pBuffer[5], (unsigned)outapp->pBuffer[6], (unsigned)outapp->pBuffer[7], (unsigned)outapp->pBuffer[8]);
+		buffer += 4;
+		*(uint32*)buffer = FEATURE_COUNT;
+		buffer += 4;
+		
+		// Write Tradeskill Depot entry 1
+		*(uint32*)buffer = FEATURE_ID_TRADESKILL_DEPOT_1;
+		buffer += 4;
+		*(uint32*)buffer = FEATURE_COUNT;
+		buffer += 4;
+		
+		// Write Tradeskill Depot entry 2
+		*(uint32*)buffer = FEATURE_ID_TRADESKILL_DEPOT_2;
+		buffer += 4;
+		*(uint32*)buffer = FEATURE_COUNT;
+
+		// Log(Logs::General, Logs::Error, "[FEATURE_UNLOCK] Sending 3 features: DH=0x%X, Depot1=0x%X, Depot2=0x%X",
+		// 	FEATURE_ID_DRAGONS_HOARD, FEATURE_ID_TRADESKILL_DEPOT_1, FEATURE_ID_TRADESKILL_DEPOT_2);
+		// std::ostringstream hex;
+		// hex << std::hex << std::setfill('0');
+		// for (uint32 i = 0; i < packet_size; i++) {
+		// 	if (i > 0 && i % 4 == 0) hex << " ";
+		// 	hex << std::setw(2) << (int)outapp->pBuffer[i];
+		// }
+		// Log(Logs::General, Logs::Error, "[FEATURE_UNLOCK] Packet HEX (%u bytes): %s", packet_size, hex.str().c_str());
+		// Log(Logs::General, Logs::Error, "[FEATURE_UNLOCK] Pre-queue opcode: EmuOpcode=%u (0x%04X)", outapp->GetOpcode(), outapp->GetOpcode());
+
+		FastQueuePacket(&outapp);
+
+		// Log(Logs::General, Logs::Error, "[FEATURE_UNLOCK] FastQueuePacket returned successfully");
+	}
+}
+
+static void CollectDragonHoardItemsCallback(int16 slot_id, EQ::ItemInstance* inst, void* ctx) {
+	if (!inst) return;
+	if (slot_id < 0 || slot_id > 199) {
+		delete inst;
+		return;
+	}
+	auto* items = static_cast<std::vector<std::pair<int16_t, EQ::ItemInstance*>>*>(ctx);
+	if (items)
+		items->push_back({static_cast<int16_t>(slot_id), inst});
+	else
+		delete inst;
+}
+
+void Client::SendDragonHoardItemList() {
+	std::vector<std::pair<int16_t, EQ::ItemInstance*>> items;
+	database.GetDragonHoardItems(AccountID(), CollectDragonHoardItemsCallback, &items);
+	const int total = static_cast<int>(items.size());
+	// [DH_ORDER_RESTORED] back to normal order (slot 1 first, ascending).
+	for (int i = 0; i < total; ++i) {
+		int16_t slot_id = items[i].first;
+		EQ::ItemInstance* inst = items[i].second;
+		const EQ::ItemData* item = inst ? inst->GetItem() : nullptr;
+		uint32_t item_id = item ? item->ID : 0;
+		// [DH_ITEMCLASS_DEBUG] blob byte 0 = ItemClass; 136/137/138 suggest wrong field or struct misread
+		if (item) {
+			// LogInfo("[DH_ITEMCLASS_DEBUG] item_id={} ItemClass={} ItemType={} BagType={} Icon={} (raw struct values)",
+			// 	item->ID, (unsigned)item->ItemClass, (unsigned)item->ItemType, (unsigned)item->BagType, item->Icon);
+			// Raw itemclass from items table (dragonhoard_items has no itemclass column; item data comes from items via GetItem)
+			std::string q = StringFormat("SELECT itemclass FROM items WHERE id = %u", item->ID);
+			auto res = content_db.QueryDatabase(q);
+			if (res.Success() && res.RowCount() > 0) {
+				auto row = res.begin();
+				// LogInfo("[DH_ITEMCLASS_DEBUG] items.itemclass (raw DB) = {} for item_id={}", row[0] ? row[0] : "(null)", item->ID);
+			} else {
+				// LogInfo("[DH_ITEMCLASS_DEBUG] no items row for item_id={} (query failed or empty)", item->ID);
+			}
+		}
+		// Log(Logs::General, Logs::Error, "[DH_ITEMS] Sending slot=%d item_id=%u (%d of total=%d)", (int)slot_id, item_id, i + 1, total);
+		// Restored ItemPacketDragonHoard (0x77) after bypass test confirmed routing is not the issue.
+		if (item) {
+			// [DH_LOG_CLEANUP] Per-item DH list send line disabled.
+			// [DH_SEND_ITEM_TMP]
+			// LogInfo("[DH_SEND_ITEM] Sending item id={} name='{}'", item->ID, item->Name);
+		}
+		SendItemPacket(5000 + slot_id, inst, ItemPacketType::ItemPacketDragonHoard);
+		// [DH_DELAY_TEST] 500ms between each item to test whether item processing timing causes items 2 and 3 to fail
+		// [DH_SLEEP_REMOVE]
+		// std::this_thread::sleep_for(std::chrono::milliseconds(500));
+		// [DH_BYPASS_TEST] Route DH items via 0x67 (ItemPacketTrade) instead of 0x77 to test if issue is 0x77 path vs deserialization
+		// SendItemPacket(5000 + slot_id, inst, ItemPacketType::ItemPacketTrade);
+		// if (inst && inst->GetItem())
+		// 	Log(Logs::General, Logs::Error, "[DH_ITEMS] slot=%d item_id=%u cost=%u icon=%u serial=%u", (int)slot_id, inst->GetItem()->ID, inst->GetItem()->Price, inst->GetItem()->Icon, (uint32_t)inst->GetSerialNumber());
+		delete inst;
+	}
+	// [DH_LOG_CLEANUP] Ingress capture trigger disabled (was logging every client packet with hex for ~15s after DH item list).
+	// [DH_INGRESS_CAPTURE] ENABLED — arms ~15s window; all ingress logged in HandlePacket via TryLogIngressCapturePacket.
+	// Log every client→server packet for a short window (responses to DH item packets).
+	// StartClientIngressCaptureAfterDHItems(15000);
+}
+
+void Client::StartClientIngressCaptureAfterDHItems(uint32 duration_ms)
+{
+	(void)Timer::SetCurrentTime();
+	m_client_ingress_capture_seq = 0;
+	m_client_ingress_capture_until_ms = Timer::GetCurrentTime() + duration_ms;
+	// [DH_LOG_CLEANUP] Ingress capture window start log disabled.
+	// Log(Logs::General, Logs::Error,
+	// 	"[DH_INGRESS_CAPTURE] Window started: %u ms for char=%s charid=%u account=%u — logging all incoming packets with hex",
+	// 	(unsigned)duration_ms,
+	// 	GetName() ? GetName() : "(null)",
+	// 	(unsigned)character_id,
+	// 	(unsigned)AccountID());
+}
+
+void Client::TryLogIngressCapturePacket(const EQApplicationPacket *app)
+{
+	if (!app || m_client_ingress_capture_until_ms == 0) {
+		return;
+	}
+	(void)Timer::SetCurrentTime();
+	const uint32 now = Timer::GetCurrentTime();
+	if (now >= m_client_ingress_capture_until_ms) {
+		m_client_ingress_capture_until_ms = 0;
+		return;
+	}
+	// [DH_LOG_CLEANUP] Ingress capture hex + per-packet log disabled — restore block + TryLogIngressCapturePacket in HandlePacket.
+	return;
+	// ++m_client_ingress_capture_seq;
+	// const EmuOpcode opcode = app->GetOpcode();
+	// const uint16 protocol_opcode = app->GetProtocolOpcode();
+	// const char *emu_name = OpcodeManager::EmuToName(opcode);
+	// const uint32 ms_left = m_client_ingress_capture_until_ms - now;
+	// static const uint32 kMaxHex = 2048;
+	// uint32 hex_len = app->size;
+	// if (hex_len > kMaxHex) {
+	// 	hex_len = kMaxHex;
+	// }
+	// std::string hex_suffix;
+	// if (app->pBuffer && hex_len > 0) {
+	// 	hex_suffix = DumpPacketHexToString(app->pBuffer, hex_len);
+	// }
+	// if (app->size > kMaxHex) {
+	// 	hex_suffix += StringFormat(" ... [truncated, total_size=%u]", (unsigned)app->size);
+	// }
+	// Log(Logs::General, Logs::Error,
+	// 	"[DH_INGRESS_CAPTURE] seq=%u ms_left=%u EmuOpcode=%d (%s) Protocol=0x%04X Size=%u%s",
+	// 	(unsigned)m_client_ingress_capture_seq,
+	// 	(unsigned)ms_left,
+	// 	(int)opcode,
+	// 	emu_name ? emu_name : "?",
+	// 	(unsigned)protocol_opcode,
+	// 	(unsigned)app->size,
+	// 	hex_suffix.c_str());
+}
+
+// Send Dragon's Hoard and Personal Depot Slot Counts (OP_FeatureSetup3 / 0x3FE5)
+// This packet sets the slot count limits that the client caches
+// [DH_DEPOSIT_RESTORE] Zone-in OP_DragonsHoard 8->2->0 matches sub_1401f87f0 gates (+0x23e8/+0x23ec); full dump cross-ref in zone/client_packet.cpp above Handle_OP_DragonsHoard.
+void Client::SendDragonHoardSlotCounts() {
+	// [DH_LOG_CLEANUP] Zone-in slot-count debug line disabled.
+	// Log(Logs::General, Logs::Error, "[SLOT_COUNTS_DEBUG] Function called - m_ClientVersion=%d, Laurion=%d",
+	// 	(int)m_ClientVersion, (int)EQ::versions::ClientVersion::Laurion);
+
+	if (m_ClientVersion >= EQ::versions::ClientVersion::Laurion) {
+		// FIRST: Send action=8 — byte[4]=0 for client +0x23e8 (enabled); populated flag set only in 6D2D path
+		auto enable_pkt = new EQApplicationPacket(OP_DragonsHoard, 5);
+		memset(enable_pkt->pBuffer, 0, 5);
+		uint32* enable_data = (uint32*)enable_pkt->pBuffer;
+		enable_data[0] = 8;  // action
+		enable_pkt->pBuffer[4] = 0;
+
+		// [DH_LOG_CLEANUP] Zone-in action=8 byte HEX disabled.
+		// std::ostringstream enable_hex;
+		// enable_hex << std::hex << std::setfill('0');
+		// for (uint32 i = 0; i < 5; i++)
+		// 	enable_hex << std::setw(2) << (int)enable_pkt->pBuffer[i] << " ";
+		// Log(Logs::General, Logs::Error, "[DRAGONSHOARD_INIT] OP_DragonsHoard action=8 (zone-in) exact bytes: %s | offset4=0x%02X (%u)",
+		// 	enable_hex.str().c_str(), (unsigned)enable_pkt->pBuffer[4], (unsigned)enable_pkt->pBuffer[4]);
+		QueuePacket(enable_pkt);
+		safe_delete(enable_pkt);
+		
+		// SECOND: Send action=2 to set max_slots (writes to 0x23ec); capacity at offset 4
+		auto slots_pkt = new EQApplicationPacket(OP_DragonsHoard, 8);
+		uint32* slots_data = (uint32*)slots_pkt->pBuffer;
+		slots_data[0] = 2;    // action
+		slots_data[1] = 200;  // max_slots = 200
+
+		// [DH_LOG_CLEANUP] Zone-in action=2 byte HEX disabled.
+		// std::ostringstream slots_hex;
+		// slots_hex << std::hex << std::setfill('0');
+		// for (uint32 i = 0; i < 8; i++)
+		// 	slots_hex << std::setw(2) << (int)slots_pkt->pBuffer[i] << " ";
+		// uint32 cap_at_offset4 = slots_data[1];
+		// Log(Logs::General, Logs::Error, "[DRAGONSHOARD_INIT] OP_DragonsHoard action=2 (zone-in) exact bytes: %s | offset4(capacity)=%u",
+		// 	slots_hex.str().c_str(), cap_at_offset4);
+		QueuePacket(slots_pkt);
+		safe_delete(slots_pkt);
+		
+		// THIRD: Send action=0 (item list) so client can set DragonHoardPopulated (eqlib +0x23e8).
+		// The client may require this "list" response before it sets the flag. Use real count from dragonhoard_items.
+		// [DH_TXT_ROOT_AUDIT] d:\\Server-larion\\1401f87f0 dh packet handler.txt — action=0 with owned byte !=0 still runs sub_1401098f0+sub_14010a280 (clears +0x330 then refresh). Zone-in has no 0x77 items yet; OK. Deposit/withdraw-only action=0 with owned=1 without follow-up item list may desync UI (see client_packet case 3/4 comments).
+		uint32 dh_count_init = database.GetDragonHoardCount(AccountID());
+		auto list_pkt = new EQApplicationPacket(OP_DragonsHoard, sizeof(DragonsHoard_Response_Struct));
+		DragonsHoard_Response_Struct* list_resp = (DragonsHoard_Response_Struct*)list_pkt->pBuffer;
+		memset(list_resp, 0, sizeof(DragonsHoard_Response_Struct));
+		list_resp->action = 0;
+		list_resp->owned = 1;
+		list_resp->max_slots = 200;
+		list_resp->item_count = dh_count_init;
+		// [DH_LOG_CLEANUP_3]
+		// Log(Logs::General, Logs::Error, "[DRAGONSHOARD_INIT] OP_DragonsHoard action=0 (zone-in): owned=1, max_slots=200, item_count=%u (item list sent when client opens window)", dh_count_init);
+		QueuePacket(list_pkt);
+		safe_delete(list_pkt);
+		// Do NOT send item list here — client crashes on 0x77 packets during zone-in. Send when client opens DH (action=0 or 0x6D2D).
+		
+		// PERSONAL DEPOT INITIALIZATION
+		// Action 8: sets *(rcx + 0x23f4) = 1 (enable flag), client shows window
+		auto depot_enable_pkt = new EQApplicationPacket(OP_PersonalDepot, 8);
+		uint32* depot_enable_data = (uint32*)depot_enable_pkt->pBuffer;
+		depot_enable_data[0] = 8;  // action
+		depot_enable_data[1] = 1;  // enabled -> client stores at +0x23f4
+
+		// [DH_LOG_CLEANUP_3]
+		// Log(Logs::General, Logs::Error, "[PERSONALDEPOT_INIT] Sending action=8 enabled=1 at zone-in");
+		QueuePacket(depot_enable_pkt);
+		safe_delete(depot_enable_pkt);
+		
+		// Action 4: 64-byte packet; header=59 bytes, capacity at offset 59.
+		static const uint32_t PERSONAL_DEPOT_ACTION4_SIZE = 64;
+		static const uint32_t PERSONAL_DEPOT_CAPACITY_OFFSET = 59;
+		auto depot_slots_pkt = new EQApplicationPacket(OP_PersonalDepot, PERSONAL_DEPOT_ACTION4_SIZE);
+		memset(depot_slots_pkt->pBuffer, 0, PERSONAL_DEPOT_ACTION4_SIZE);
+		*(uint32*)depot_slots_pkt->pBuffer = 4;
+		*(uint32*)(depot_slots_pkt->pBuffer + PERSONAL_DEPOT_CAPACITY_OFFSET) = 500;
+		// [DH_LOG_CLEANUP] Zone-in PersonalDepot OUT hex loop disabled.
+		// Log(Logs::General, Logs::Error, "[PERSONALDEPOT_INIT] OUTGOING: packet_size(arg3)=%u, capacity_offset=%u at zone-in", PERSONAL_DEPOT_ACTION4_SIZE, PERSONAL_DEPOT_CAPACITY_OFFSET);
+		// for (uint32 i = 0; i < PERSONAL_DEPOT_ACTION4_SIZE; i += 16) {
+		// 	std::ostringstream hex_line;
+		// 	hex_line << std::hex << std::setfill('0') << std::setw(4) << i << ": ";
+		// 	for (uint32 j = 0; j < 16 && (i + j) < PERSONAL_DEPOT_ACTION4_SIZE; j++)
+		// 		hex_line << std::setw(2) << (int)depot_slots_pkt->pBuffer[i + j] << " ";
+		// 	Log(Logs::General, Logs::Error, "[PERSONALDEPOT_INIT] OUT hex %s", hex_line.str().c_str());
+		// }
+		QueuePacket(depot_slots_pkt);
+		safe_delete(depot_slots_pkt);
+		
+		// THIRD: Send OP_FeatureSetup3 (legacy/fallback)
+		// 16-byte packet with slot counts at offsets 8 and 12
+		auto outapp = new EQApplicationPacket(OP_FeatureSetup3, 16);
+		uint32* data = (uint32*)outapp->pBuffer;
+		
+		// First 8 bytes: headers/flags (values from live capture)
+		data[0] = 0x01010000;  // Header
+		data[1] = 0x05F1BF00;  // Flags
+		
+		// Slot counts (DH=200 base, Depot=500 for now)
+		data[2] = 200;  // Offset 8: Dragon's Hoard capacity
+		data[3] = 500;  // Offset 12: Personal Depot capacity
+
+		// [DH_LOG_CLEANUP_3]
+		// Log(Logs::General, Logs::Error, "[FEATURE_SETUP3_PROACTIVE] Sending DH=200, Depot=500 at zone-in");
 
 		QueuePacket(outapp);
 		safe_delete(outapp);

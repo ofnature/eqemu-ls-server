@@ -117,6 +117,8 @@ namespace Laurion
 		const int16 GUILD_TROPHY_TRIBUTE_SIZE = 0;//unknown
 		const int16 KRONO_SIZE = 0;//unknown
 		const int16 OTHER_SIZE = 0;//unknown
+		const int16 DRAGON_HOARD_SIZE = 200; // Dragon's Hoard storage
+		const int16 TRADESKILL_DEPOT_SIZE = 500; // Personal Tradeskill Depot
 
 		const int16 TRADE_NPC_SIZE = 4; // defined by implication
 
@@ -201,6 +203,13 @@ namespace Laurion
 
 		const int16 CORPSE_BEGIN = invslot::slotGeneral1;
 		const int16 CORPSE_END = invslot::slotGeneral1 + invslot::slotCursor;
+
+		// Laurion-specific inventory types
+		const int16 DRAGON_HOARD_BEGIN = 5000;
+		const int16 DRAGON_HOARD_END = (DRAGON_HOARD_BEGIN + invtype::DRAGON_HOARD_SIZE) - 1;
+
+		const int16 TRADESKILL_DEPOT_BEGIN = 5500;
+		const int16 TRADESKILL_DEPOT_END = (TRADESKILL_DEPOT_BEGIN + invtype::TRADESKILL_DEPOT_SIZE) - 1;
 
 		const uint64 EQUIPMENT_BITMASK = 0x00000000007FFFFF;
 		const uint64 GENERAL_BITMASK = 0x00000007FF800000;

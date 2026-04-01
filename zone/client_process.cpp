@@ -741,6 +741,7 @@ void Client::OnDisconnect(bool hard_disconnect) {
 // Sends the client complete inventory used in character login
 void Client::BulkSendInventoryItems()
 {
+	LogInventory("[BULK_SEND_INVENTORY] Starting BulkSendInventoryItems for character [{}]", GetName());
 	// LINKDEAD TRADE ITEMS
 	// Move trade slot items back into normal inventory..need them there now for the proceeding validity checks
 	for (int16 slot_id = EQ::invslot::TRADE_BEGIN; slot_id <= EQ::invslot::TRADE_END; slot_id++) {
@@ -817,8 +818,13 @@ void Client::BulkSendInventoryItems()
     auto outapp = new EQApplicationPacket(OP_CharInventory);
     outapp->size = ob.size();
     outapp->pBuffer = ob.detach();
+    
+    LogInventory("[BULK_SEND_INVENTORY] Created OP_CharInventory packet, size=[{}] bytes for character [{}]", outapp->size, GetName());
+    
     QueuePacket(outapp);
     safe_delete(outapp);
+    
+    LogInventory("[BULK_SEND_INVENTORY] Queued OP_CharInventory packet for character [{}]", GetName());
 }
 
 void Client::BulkSendMerchantInventory(int merchant_id, int npcid) {
@@ -1209,7 +1215,20 @@ void Client::OPMemorizeSpell(const EQApplicationPacket* app)
 			break;
 		}
 		case memSpellForget: {
-			UnmemSpell(m->slot);
+			// Laurion's Song sends scribing=2 after memorization completes as a confirmation
+			// Send back confirmation to client with scribing=1 (memSpellMemorize) to keep gem lit
+			LogError("[MEM_SPELL_DEBUG] Received scribing=2 for slot {} spell {} - sending memorization complete confirmation with scribing=1", 
+				m->slot, m->spell_id);
+			MemorizeSpell(m->slot, m->spell_id, memSpellMemorize);
+			break;
+		}
+		case memSpellSpellbar: {
+			// Laurion's Song uses scribing=3 for un-memorizing spells
+			LogError("[MEM_SPELL_DEBUG] Received scribing=3 for slot {} - un-memorizing spell and sending scribing=3 confirmation", m->slot);
+			uint32 spell_id = m_pp.mem_spells[m->slot];
+			UnmemSpell(m->slot, false); // Don't send default confirmation
+			// Send back scribing=3 confirmation for Laurion
+			MemorizeSpell(m->slot, spell_id, memSpellSpellbar);
 			break;
 		}
 	}

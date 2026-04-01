@@ -49,7 +49,23 @@ namespace Laurion
 	static OpcodeManager* opcodes = nullptr;
 	static Strategy struct_strategy;
 
-	void SerializeItem(SerializeBuffer &buffer, const EQ::ItemInstance* inst, int16 slot_id, uint8 depth, ItemPacketType packet_type);
+	// Global logger for encoding - helps identify unmapped opcodes
+	void LogEncode(const EQApplicationPacket* app, const char* funcname) {
+		if (!app) return;
+		// [DH_LOG_CLEANUP_2] Per-packet [LAURION_ENCODE] for size>500 disabled.
+		// Log all large packets and any packet that might be suspicious
+		// if (app->size > 500) {
+		// 	Log(Logs::General, Logs::Error,
+		// 		"[LAURION_ENCODE] %s | EmuOpcode: %d (%s) | Size: %d bytes",
+		// 		funcname,
+		// 		app->GetOpcode(),
+		// 		opcodes ? opcodes->EmuToName(app->GetOpcode()) : "Unknown",
+		// 		app->size);
+		// }
+		(void)funcname;
+	}
+
+	void SerializeItem(SerializeBuffer &buffer, const EQ::ItemInstance* inst, int16 slot_id, uint8 depth, ItemPacketType packet_type, bool prepend_dh_count = true);
 
 	// message link converters
 	static inline void ServerToLaurionConvertLinks(std::string& message_out, const std::string& message_in);
@@ -135,6 +151,11 @@ namespace Laurion
 			}
 			LogNetcode("[OPCODES] Reloaded opcodes for patch [{}]", name);
 		}
+	}
+
+	void SerializeOneDragonHoardItem(SerializeBuffer& buffer, const EQ::ItemInstance* inst, int16 slot_id)
+	{
+		SerializeItem(buffer, inst, slot_id, 0, ItemPacketType::ItemPacketDragonHoard, false);
 	}
 
 	Strategy::Strategy() : StructStrategy()
@@ -355,10 +376,9 @@ namespace Laurion
 		eq->slot = static_cast<uint32>(ServerToLaurionCastingSlot(static_cast<EQ::spells::CastingSlot>(emu->slot)));
 
 		OUT(spell_id);
-		//we should double check this cause it feels wrong
-		eq->inventory_slot = LaurionInventorySlotToCastingInventorySlot(ServerToLaurionSlot(emu->inventoryslot));
-		//OUT(inventoryslot);
+		OUT(inventoryslot);
 		OUT(target_id);
+		// cs_unknown array is left as zeros
 
 		FINISH_ENCODE();
 	}
@@ -404,45 +424,66 @@ namespace Laurion
 	}
 
 	ENCODE(OP_CharInventory) {
-		//consume the packet
+		// Consume the packet
 		EQApplicationPacket* in = *p;
 		*p = nullptr;
 
+		LogEncode(in, "OP_CharInventory");
+
+		// Handle empty inventory case
 		if (!in->size) {
 			in->size = 4;
 			in->pBuffer = new uchar[in->size];
 			memset(in->pBuffer, 0, in->size);
-
 			dest->FastQueuePacket(&in, ack_req);
 			return;
 		}
 
-		//store away the emu struct
+		// Store away the emu struct
 		uchar* __emu_buffer = in->pBuffer;
 
-		int item_count = in->size / sizeof(EQ::InternalSerializedItem_Struct);
-		if (!item_count || (in->size % sizeof(EQ::InternalSerializedItem_Struct)) != 0) {
-			Log(Logs::General, Logs::Netcode, "[STRUCTS] Wrong size on outbound %s: Got %d, expected multiple of %d",
-				opcodes->EmuToName(in->GetOpcode()), in->size, sizeof(EQ::InternalSerializedItem_Struct));
+		// Calculate item count - 64-bit client uses InternalSerializedItem_Struct
+		// which contains: int16 slot_id (2 bytes) + const void* inst (8 bytes on 64-bit) = 16 bytes per item
+		const size_t struct_size = sizeof(EQ::InternalSerializedItem_Struct);
+		int item_count = in->size / struct_size;
 
+		// Validate packet size alignment
+		if (!item_count || (in->size % struct_size) != 0) {
+			Log(Logs::General, Logs::Netcode,
+				"[STRUCTS] Wrong size on outbound %s: Got %d, expected multiple of %d (struct_size)",
+				opcodes->EmuToName(in->GetOpcode()), in->size, struct_size);
 			delete in;
 			return;
 		}
 
+		// Cast to internal struct array
 		EQ::InternalSerializedItem_Struct* eq = (EQ::InternalSerializedItem_Struct*)in->pBuffer;
+
+		// Create serialize buffer for 64-bit client
 		SerializeBuffer buffer;
 		buffer.WriteUInt32(item_count);
 
+		// Serialize each item for the 64-bit client format
 		for (int index = 0; index < item_count; ++index, ++eq) {
+			// Validate pointer before dereferencing
+			if (!eq->inst) {
+				Log(Logs::General, Logs::Netcode,
+					"[STRUCTS] NULL item instance at index %d in OP_CharInventory", index);
+				continue;
+			}
+
 			SerializeItem(buffer, (const EQ::ItemInstance*)eq->inst, eq->slot_id, 0, ItemPacketCharInventory);
 		}
 
+		// Replace packet buffer with serialized data
 		in->size = buffer.size();
-		in->pBuffer = new unsigned char[buffer.size()];
-		memcpy(in->pBuffer, buffer.buffer(), buffer.size());
+		in->pBuffer = new unsigned char[in->size];
+		memcpy(in->pBuffer, buffer.buffer(), in->size);
 
+		// Clean up old buffer
 		delete[] __emu_buffer;
 
+		// Send to client
 		dest->FastQueuePacket(&in, ack_req);
 	}
 
@@ -584,7 +625,15 @@ namespace Laurion
 		ENCODE_LENGTH_EXACT(ExpansionInfo_Struct);
 		SETUP_DIRECT_ENCODE(ExpansionInfo_Struct, structs::ExpansionInfo_Struct);
 
+		// Zero out the unknown padding
+		memset(eq->Unknown000, 0, sizeof(eq->Unknown000));
+		
 		OUT(Expansions);
+
+		Log(Logs::General, Logs::Error, "[EXPANSION_ENCODE] Sending expansion packet:");
+		Log(Logs::General, Logs::Error, "[EXPANSION_ENCODE]   Expansions value: %u (0x%X)", eq->Expansions, eq->Expansions);
+		Log(Logs::General, Logs::Error, "[EXPANSION_ENCODE]   Packet size: %d bytes", __packet->size);
+		Log(Logs::General, Logs::Error, "[EXPANSION_ENCODE]   Expected size: %d bytes", sizeof(structs::ExpansionInfo_Struct));
 
 		FINISH_ENCODE();
 	}
@@ -596,6 +645,47 @@ namespace Laurion
 		//later we should change the underlying server to use this more accurate value
 		//and encode the 330 in the other patches
 		eq->exp = emu->exp * 100000 / 330;
+
+		FINISH_ENCODE();
+	}
+
+	ENCODE(OP_FeatureUnlock)
+	{
+		SETUP_VAR_ENCODE(FeatureUnlock_Struct);
+		
+		// OP_FeatureUnlock structure:
+		// 1 byte header + 4 bytes count + (count * 8 bytes per entry)
+		// Each entry: feature_id(4) + feature_count(4)
+		
+		// Calculate output size: 1 (header) + 4 (count) + (count * 8)
+		uint32_t out_size = 1 + 4 + (emu->count * 8);
+		__packet->size = out_size;
+		__packet->pBuffer = new unsigned char[out_size];
+		memset(__packet->pBuffer, 0, out_size);
+		
+		// Write header byte
+		__packet->WriteUInt8(emu->header);
+		
+		// Write count
+		__packet->WriteUInt32(emu->count);
+		
+		// Write each feature entry
+		FeatureUnlock_Entry* entries = (FeatureUnlock_Entry*)((unsigned char*)emu + sizeof(FeatureUnlock_Struct));
+		for (uint32_t i = 0; i < emu->count; i++) {
+			__packet->WriteUInt32(entries[i].feature_id);
+			__packet->WriteUInt32(entries[i].feature_count);
+		}
+
+		// [DH_LOG_CLEANUP_2] [FEATURE_UNLOCK_ENCODE] count + output HEX disabled.
+		// Log(Logs::General, Logs::Error, "[FEATURE_UNLOCK_ENCODE] Encoded %u feature(s), packet size: %u bytes",
+		// 	emu->count, __packet->size);
+		// std::ostringstream hex;
+		// hex << std::hex << std::setfill('0');
+		// for (uint32_t i = 0; i < __packet->size; i++) {
+		// 	if (i > 0 && i % 4 == 0) hex << " ";
+		// 	hex << std::setw(2) << (int)__packet->pBuffer[i];
+		// }
+		// Log(Logs::General, Logs::Error, "[FEATURE_UNLOCK_ENCODE] Output packet HEX: %s", hex.str().c_str());
 
 		FINISH_ENCODE();
 	}
@@ -772,6 +862,9 @@ namespace Laurion
 		EQApplicationPacket* in = *p;
 		*p = nullptr;
 		uchar* __emu_buffer = in->pBuffer;
+
+		LogEncode(in, "OP_ItemPacket");
+
 		ItemPacket_Struct* old_item_pkt = (ItemPacket_Struct*)__emu_buffer;
 
 		auto type = ServerToLaurionItemPacketType(old_item_pkt->PacketType);
@@ -806,11 +899,41 @@ namespace Laurion
 			dest->FastQueuePacket(&outapp, ack_req);
 			break;
 		}
+		case item::ItemPacketType::ItemPacketDragonHoard: {
+			// Batch packet: buffer is [PacketType 4][count 4][item1 258][item2 258]...; output payload only (count + N×258), no type prefix.
+			if (old_item_pkt->PacketType == ItemPacketType::ItemPacketDragonHoardBatch && in->size > 4) {
+				size_t payload_len = in->size - 4;
+				auto outapp = new EQApplicationPacket(OP_ItemPacket, payload_len);
+				memcpy(outapp->pBuffer, __emu_buffer + 4, payload_len);
+				dest->FastQueuePacket(&outapp, ack_req);
+				break;
+			}
+			// fallthrough: single-item DH
+		}
 		default: {
 			EQ::InternalSerializedItem_Struct* int_struct = (EQ::InternalSerializedItem_Struct*)(&__emu_buffer[4]);
 			SerializeBuffer buffer;
 			buffer.WriteInt32((int32_t)type);
 			SerializeItem(buffer, (const EQ::ItemInstance*)int_struct->inst, int_struct->slot_id, 0, old_item_pkt->PacketType);
+
+			// [DH_LOG_CLEANUP] [WIRE_ITEM_RAW] per-packet DH wire hex disabled.
+			// [WIRE_ITEM_RAW] exact wire bytes (type prefix + payload) that the client receives — all DH packets logged, first 320 bytes
+			// if (type == item::ItemPacketType::ItemPacketDragonHoard) {
+			// 	size_t wire_len = buffer.size();
+			// 	size_t dump_len = std::min(wire_len, size_t(320));
+			// 	const unsigned char* wire_buf = reinterpret_cast<const unsigned char*>(buffer.buffer());
+			// 	std::ostringstream wire_hex;
+			// 	wire_hex << std::hex << std::setfill('0');
+			// 	for (size_t i = 0; i < dump_len; i++) {
+			// 		if (i > 0 && i % 16 == 0) wire_hex << "\n";
+			// 		if (i % 16 == 0) wire_hex << std::setw(4) << i << ": ";
+			// 		wire_hex << std::setw(2) << (int)wire_buf[i] << " ";
+			// 	}
+			// 	uint32_t type_prefix = 0;
+			// 	if (wire_len >= 4)
+			// 		memcpy(&type_prefix, wire_buf, 4);
+			// 	LogInfo("[WIRE_ITEM_RAW] type_prefix=0x{:08X} packet_size={} first {} bytes (hex):\n{}", type_prefix, wire_len, dump_len, wire_hex.str());
+			// }
 
 			auto outapp = new EQApplicationPacket(OP_ItemPacket, buffer.size());
 			outapp->WriteData(buffer.buffer(), buffer.size());
@@ -964,6 +1087,8 @@ namespace Laurion
 	ENCODE(OP_NewZone) {
 		EQApplicationPacket* in = *p;
 		*p = nullptr;
+
+		LogEncode(in, "OP_NewZone");
 
 		unsigned char* __emu_buffer = in->pBuffer;
 		NewZone_Struct* emu = (NewZone_Struct*)__emu_buffer;
@@ -1236,6 +1361,8 @@ namespace Laurion
 		EQApplicationPacket* in = *p;
 		*p = nullptr;
 
+		LogEncode(in, "OP_PlayerProfile");
+
 		unsigned char* __emu_buffer = in->pBuffer;
 		PlayerProfile_Struct* emu = (PlayerProfile_Struct*)__emu_buffer;
 
@@ -1300,7 +1427,7 @@ namespace Laurion
 		//u32 property_count;
 		out.WriteUInt32(10); // properties count
 
-		//u32 properties[property_count]; 
+		//u32 properties[property_count];
 		for (int i = 0; i < 10; i++) {
 			out.WriteUInt32(0);
 		}
@@ -2314,6 +2441,8 @@ namespace Laurion
 	{
 		EQApplicationPacket* in = *p;
 		*p = nullptr;
+		LogEncode(in, "OP_SendAATable");
+
 		AARankInfo_Struct* emu = (AARankInfo_Struct*)in->pBuffer;
 
 		std::vector<int32> skill;
@@ -2601,13 +2730,22 @@ namespace Laurion
 	}
 
 	ENCODE(OP_SendMembership) {
-		ENCODE_LENGTH_EXACT(Membership_Struct);
+		// Use ATLEAST instead of EXACT because server struct (152 bytes) != client struct (145 bytes packed)
+		// Server: uint32 membership + exit_url_length = 152 bytes
+		// Client: uint8 membership, no exit_url_length = 145 bytes
+		ENCODE_LENGTH_ATLEAST(Membership_Struct);
 		SETUP_DIRECT_ENCODE(Membership_Struct, structs::Membership_Struct);
 
 		eq->membership = emu->membership;
 		eq->races = emu->races;
 		eq->classes = emu->classes;
 		eq->entrysize = 33;
+
+		// [DH_LOG_CLEANUP_2] [MEMBERSHIP_ENCODE_VALUES] disabled.
+		// Debug: Log the values being encoded
+		// LogInfo("[MEMBERSHIP_ENCODE_VALUES] membership={}, races={:#x}, classes={:#x}, entrysize={}",
+		// 	eq->membership, eq->races, eq->classes, eq->entrysize);
+
 		eq->entries[0] = -1;  // Max AA Restriction
 		eq->entries[1] = -1;  // Max Level Restriction
 		eq->entries[2] = -1;  // Max Char Slots per Account (not used by client?)
@@ -2636,11 +2774,15 @@ namespace Laurion
 		eq->entries[25] = 0;  // IllusionKeyRingSlots
 		eq->entries[26] = 0;  // FamiliarKeyRingSlots
 		eq->entries[27] = 0;  // FamiliarAutoLeave
-		eq->entries[28] = 0;  // HeroForgeKeyRingSlots
-		eq->entries[29] = 0;  // DragonHoardSlots
+		eq->entries[28] = 500;  // HeroForgeKeyRingSlots - ENABLED
+		eq->entries[29] = 200;  // DragonHoardSlots - ENABLED!
 		eq->entries[30] = 0;  // TeleportKeyRingSlots
-		eq->entries[31] = 0;  // PersonalDepotSlots
+		eq->entries[31] = 500;  // PersonalDepotSlots (TradeskillDepot) - ENABLED!
 		eq->entries[32] = 0;
+
+		// [DH_LOG_CLEANUP_3] Debug logging disabled (do not delete).
+		// LogInfo("[MEMBERSHIP_ENCODE] entrysize=[{}], entries[29]=[{}] (DragonHoard), entries[31]=[{}] (Depot), packet_size=[{}] bytes, expected_size=[{}] bytes",
+		//     eq->entrysize, eq->entries[29], eq->entries[31], __packet->size, sizeof(structs::Membership_Struct));
 
 		FINISH_ENCODE();
 	}
@@ -2650,29 +2792,29 @@ namespace Laurion
 		SETUP_DIRECT_ENCODE(Membership_Details_Struct, structs::Membership_Details_Struct);
 
 		int32 settings[96][3] = {
-			{ 0, 0, 250 }, { 1, 0, 1000 }, { 0, 1, -1 }, { 1, 1, -1 }, 
-			{ 0, 2, 2 }, { 2, 0, -1 }, { 3, 0, -1 }, { 1, 2, 4 }, 
-			{ 0, 3, 1 }, { 2, 1, -1 }, { 3, 1, -1 }, { 1, 3, 1 }, 
-			{ 0, 4, -1 }, { 2, 2, -1 }, { 3, 2, -1 }, { 1, 4, -1 }, 
-			{ 0, 5, -1 }, { 2, 3, -1 }, { 3, 3, -1 }, { 1, 5, -1 }, 
-			{ 0, 6, 0 }, { 2, 4, -1 }, { 3, 4, -1 }, { 1, 6, 0 }, 
-			{ 0, 7, 1 }, { 2, 5, -1 }, { 3, 5, -1 }, { 1, 7, 1 }, 
-			{ 0, 8, 1 }, { 2, 6, 1 }, { 3, 6, 1 }, { 1, 8, 1 }, 
-			{ 0, 9, 5 }, { 2, 7, 1 }, { 3, 7, 1 }, { 1, 9, 5 }, 
-			{ 0, 10, 0 }, { 2, 8, 1 }, { 3, 8, 1 }, { 0, 11, -1 }, 
-			{ 1, 10, 1 }, { 2, 9, -1 }, { 3, 9, -1 }, { 0, 12, -1 }, 
-			{ 1, 11, -1 }, { 2, 10, 1 }, { 3, 10, 1 }, { 0, 13, 0 }, 
-			{ 1, 12, -1 }, { 2, 11, -1 }, { 3, 11, -1 }, { 0, 14, 0 }, 
-			{ 1, 13, 1 }, { 2, 12, -1 }, { 3, 12, -1 }, { 0, 15, 0 }, 
-			{ 1, 14, 0 }, { 2, 13, 1 }, { 3, 13, 1 }, { 0, 16, 0 }, 
-			{ 1, 15, 0 }, { 2, 14, 1 }, { 3, 14, 1 }, { 0, 17, 0 }, 
-			{ 1, 16, 1 }, { 2, 15, 1 }, { 3, 15, 1 }, { 0, 18, 0 }, 
-			{ 1, 17, 0 }, { 2, 16, 1 }, { 3, 16, 1 }, { 0, 19, 0 }, 
-			{ 1, 18, 0 }, { 2, 17, 1 }, { 3, 17, 1 }, { 0, 20, 0 }, 
-			{ 1, 19, 0 }, { 2, 18, 1 }, { 3, 18, 1 }, { 0, 21, 0 }, 
-			{ 1, 20, 0 }, { 2, 19, -1 }, { 3, 19, -1 }, { 0, 22, 0 }, 
-			{ 1, 21, 0 }, { 2, 20, -1 }, { 3, 20, -1 }, { 2, 21, 0 }, 
-			{ 0, 23, 0 }, { 1, 22, 0 }, { 3, 21, 0 }, { 2, 22, 0 }, 
+			{ 0, 0, 500 }, { 1, 0, 500 }, { 0, 1, -1 }, { 1, 1, -1 },
+			{ 0, 2, 2 }, { 2, 0, -1 }, { 3, 0, -1 }, { 1, 2, 4 },
+			{ 0, 3, 1 }, { 2, 1, -1 }, { 3, 1, -1 }, { 1, 3, 1 },
+			{ 0, 4, -1 }, { 2, 2, -1 }, { 3, 2, -1 }, { 1, 4, -1 },
+			{ 0, 5, -1 }, { 2, 3, -1 }, { 3, 3, -1 }, { 1, 5, -1 },
+			{ 0, 6, 0 }, { 2, 4, -1 }, { 3, 4, -1 }, { 1, 6, 0 },
+			{ 0, 7, 1 }, { 2, 5, -1 }, { 3, 5, -1 }, { 1, 7, 1 },
+			{ 0, 8, 1 }, { 2, 6, 1 }, { 3, 6, 1 }, { 1, 8, 1 },
+			{ 0, 9, 5 }, { 2, 7, 1 }, { 3, 7, 1 }, { 1, 9, 5 },
+			{ 0, 10, 0 }, { 2, 8, 1 }, { 3, 8, 1 }, { 0, 11, -1 },
+			{ 1, 10, 1 }, { 2, 9, -1 }, { 3, 9, -1 }, { 0, 12, -1 },
+			{ 1, 11, -1 }, { 2, 10, 1 }, { 3, 10, 1 }, { 0, 13, 0 },
+			{ 1, 12, -1 }, { 2, 11, -1 }, { 3, 11, -1 }, { 0, 14, 0 },
+			{ 1, 13, 1 }, { 2, 12, -1 }, { 3, 12, -1 }, { 0, 15, 0 },
+			{ 1, 14, 0 }, { 2, 13, 1 }, { 3, 13, 1 }, { 0, 16, 0 },
+			{ 1, 15, 0 }, { 2, 14, 1 }, { 3, 14, 1 }, { 0, 17, 0 },
+			{ 1, 16, 1 }, { 2, 15, 1 }, { 3, 15, 1 }, { 0, 18, 0 },
+			{ 1, 17, 0 }, { 2, 16, 1 }, { 3, 16, 1 }, { 0, 19, 0 },
+			{ 1, 18, 0 }, { 2, 17, 1 }, { 3, 17, 1 }, { 0, 20, 0 },
+			{ 1, 19, 0 }, { 2, 18, 1 }, { 3, 18, 1 }, { 0, 21, 0 },
+			{ 1, 20, 0 }, { 2, 19, -1 }, { 3, 19, -1 }, { 0, 22, 0 },
+			{ 1, 21, 0 }, { 2, 20, -1 }, { 3, 20, -1 }, { 2, 21, 0 },
+			{ 0, 23, 0 }, { 1, 22, 0 }, { 3, 21, 0 }, { 2, 22, 0 },
 			{ 1, 23, 0 }, { 3, 22, 0 }, { 2, 23, 0 }, { 3, 23, 0 }
 		};
 
@@ -2695,7 +2837,7 @@ namespace Laurion
 			{ 2012271, 131071 },
 			{ 2012277, 131071 }
 		};
-		
+
 		uint32 classes[17][2] = {
 			{ 1, 131071 },
 			{ 333, 131071 },
@@ -2738,8 +2880,31 @@ namespace Laurion
 
 		eq->exit_url_length = 0;
 
+		// [DH_LOG_CLEANUP_2] [MEMBERSHIP_DETAILS_FULL] verbose dump disabled.
+		// COMPREHENSIVE LOGGING: Dump all settings that might contain slot counts
+		// LogInfo("[MEMBERSHIP_DETAILS_FULL] Packet size=[{}] bytes", __packet->size);
+		// LogInfo("[MEMBERSHIP_DETAILS_FULL] membership_setting_count=[{}]", eq->membership_setting_count);
+		// LogInfo("[MEMBERSHIP_DETAILS_FULL] Settings array (looking for slot counts):");
+		// for (int i = 0; i < 96; ++i) {
+		// 	int32 val = eq->settings[i].setting_value;
+		// 	if (val >= 100 && val <= 10000) {
+		// 		LogInfo("[MEMBERSHIP_DETAILS_FULL]   settings[{}]: index={}, id={}, VALUE={} ← POTENTIAL SLOT COUNT!",
+		// 		    i, (int)eq->settings[i].setting_index, eq->settings[i].setting_id, val);
+		// 	} else if (val != -1 && val != 0 && val != 1) {
+		// 		LogInfo("[MEMBERSHIP_DETAILS_FULL]   settings[{}]: index={}, id={}, value={}",
+		// 		    i, (int)eq->settings[i].setting_index, eq->settings[i].setting_id, val);
+		// 	}
+		// }
+		// LogInfo("[MEMBERSHIP_DETAILS_FULL] Byte layout:");
+		// LogInfo("[MEMBERSHIP_DETAILS_FULL]   offset 0x00: membership_setting_count = {}", eq->membership_setting_count);
+		// LogInfo("[MEMBERSHIP_DETAILS_FULL]   offset 0x04: settings array start");
+		// LogInfo("[MEMBERSHIP_DETAILS_FULL]   offset calculated: class_entry_count at ~0x{:03X} = {}",
+		//     4 + (96 * 12), eq->class_entry_count);
+		// LogInfo("[MEMBERSHIP_DETAILS_FULL]   offset calculated: race_entry_count at ~0x{:03X} = {}",
+		//     4 + (96 * 12) + 4 + (17 * 8), eq->race_entry_count);
+
 		FINISH_ENCODE();
-	}	
+	}
 
 	ENCODE(OP_SendZonepoints)
 	{
@@ -2860,36 +3025,36 @@ namespace Laurion
 	{
 		EQApplicationPacket* in = *p;
 		*p = nullptr;
-	
+
 		unsigned char* emu_buffer = in->pBuffer;
-	
+
 		SpawnAppearance_Struct* sas = (SpawnAppearance_Struct*)emu_buffer;
-	
+
 		if (sas->type != AppearanceType::Size)
 		{
 			//laurion struct is different than rof2's but the idea is the same
 			//we will probably want to better implement Laurion's structure later
 			auto outapp = new EQApplicationPacket(OP_SpawnAppearance, sizeof(structs::SpawnAppearance_Struct));
 			structs::SpawnAppearance_Struct *eq = (structs::SpawnAppearance_Struct*)outapp->pBuffer;
-	
+
 			eq->spawn_id = sas->spawn_id;
 			eq->type = ServerToLaurionSpawnAppearanceType(sas->type);
 			eq->parameter = sas->parameter;
-	
+
 			dest->FastQueuePacket(&outapp, ack_req);
 			delete in;
 			return;
 		}
-	
+
 		auto outapp = new EQApplicationPacket(OP_ChangeSize, sizeof(ChangeSize_Struct));
-	
+
 		ChangeSize_Struct* css = (ChangeSize_Struct*)outapp->pBuffer;
-	
+
 		css->EntityID = sas->spawn_id;
 		css->Size = (float)sas->parameter;
 		css->Unknown08 = 0;
 		css->Unknown12 = 1.0f;
-	
+
 		dest->FastQueuePacket(&outapp, ack_req);
 		delete in;
 	}
@@ -3007,6 +3172,8 @@ namespace Laurion
 		EQApplicationPacket* in = *p;
 		*p = nullptr;
 
+		LogEncode(in, "OP_ZoneSpawns");
+
 		//store away the emu struct
 		unsigned char* __emu_buffer = in->pBuffer;
 		Spawn_Struct* emu = (Spawn_Struct*)__emu_buffer;
@@ -3017,7 +3184,7 @@ namespace Laurion
 			delete in;
 			return;
 		}
-		
+
 		for (int i = 0; i < entrycount; i++, emu++) {
 			SerializeBuffer buffer;
 
@@ -3527,11 +3694,12 @@ namespace Laurion
 		emu->slot = static_cast<uint32>(LaurionToServerCastingSlot(static_cast<spells::CastingSlot>(eq->slot)));
 
 		IN(spell_id);
-		emu->inventoryslot = -1;
+		IN(inventoryslot);
 		IN(target_id);
-		IN(y_pos);
-		IN(x_pos);
-		IN(z_pos);
+		// Position data is in cs_unknown array, not used by server
+		emu->y_pos = 0;
+		emu->x_pos = 0;
+		emu->z_pos = 0;
 		FINISH_DIRECT_DECODE();
 	}
 
@@ -3694,14 +3862,58 @@ namespace Laurion
 
 	DECODE(OP_MoveItem)
 	{
+		// [DH_LOG_CLEANUP] Per-packet MoveItem raw size + INCOMING hex disabled; keep size mismatch (real decode failure).
+		// Full hex dump of raw client packet — DH deposit uses Type=38 (to_slot); if client sends different size we drop after this log
+		// Log(Logs::General, Logs::Error, "[MOVEITEM] INCOMING raw client packet size=%u (expected Laurion MoveItem_Struct=%u)", __packet->size, (unsigned)sizeof(structs::MoveItem_Struct));
+		// if (__packet->pBuffer && __packet->size > 0) {
+		// 	for (uint32_t offset = 0; offset < __packet->size; offset += 16) {
+		// 		std::ostringstream line;
+		// 		line << std::setfill('0') << std::setw(4) << std::dec << offset << ": ";
+		// 		for (uint32_t i = offset; i < offset + 16 && i < __packet->size; i++)
+		// 			line << std::hex << std::setw(2) << std::setfill('0') << (int)(uint8_t)__packet->pBuffer[i] << " ";
+		// 		Log(Logs::General, Logs::Error, "[MOVEITEM] INCOMING raw client hex (Type at ~byte 12; Type=38=DH) %s", line.str().c_str());
+		// 	}
+		// }
+		if (__packet->size != sizeof(structs::MoveItem_Struct)) {
+			Log(Logs::General, Logs::Error, "[MOVEITEM] Size mismatch — packet will be dropped, zone handler will not see it.");
+		}
+
 		DECODE_LENGTH_EXACT(structs::MoveItem_Struct);
 		SETUP_DIRECT_DECODE(MoveItem_Struct, structs::MoveItem_Struct);
 
 		Log(Logs::Detail, Logs::Netcode, "Laurion::DECODE(OP_MoveItem)");
 
+		// [DH_LOG_CLEANUP] Per-packet MoveItem decode slot spam disabled.
+		// Type=0 Slot=35 = cursor (decodes to server slot 33). DH deposit uses Type=38 (to_slot); if client sends
+		// different packet size for Type=38, DECODE_LENGTH_EXACT fails above and we never reach this log — see raw hex above.
+		// Log(Logs::General, Logs::Error, "[MOVEITEM_DECODE] Client from_slot: Type=%d Slot=%d SubIndex=%d AugIndex=%d",
+		// 	(int)eq->from_slot.Type, (int)eq->from_slot.Slot, (int)eq->from_slot.SubIndex, (int)eq->from_slot.AugIndex);
+		// Log(Logs::General, Logs::Error, "[MOVEITEM_DECODE] Client to_slot:   Type=%d Slot=%d SubIndex=%d AugIndex=%d  (Type=38 = DH window; Type=0 Slot=35 = cursor)",
+		// 	(int)eq->to_slot.Type, (int)eq->to_slot.Slot, (int)eq->to_slot.SubIndex, (int)eq->to_slot.AugIndex);
+		IN(number_in_stack);
+		// Log(Logs::General, Logs::Error, "[MOVEITEM_DECODE] Client number_in_stack=%u", emu->number_in_stack);
+
 		emu->from_slot = LaurionToServerSlot(eq->from_slot);
 		emu->to_slot = LaurionToServerSlot(eq->to_slot);
-		IN(number_in_stack);
+
+		// Log(Logs::General, Logs::Error, "[MOVEITEM_DECODE] Decoded server from_slot=%u to_slot=%u (0x%X = INVALID if DH/depot not mapped)",
+		// 	emu->from_slot, emu->to_slot, (unsigned)emu->to_slot);
+
+		FINISH_DIRECT_DECODE();
+	}
+
+	DECODE(OP_ReadBook)
+	{
+		DECODE_LENGTH_EXACT(structs::BookRequest_Struct);
+		SETUP_DIRECT_DECODE(BookRequest_Struct, structs::BookRequest_Struct);
+
+		Log(Logs::Detail, Logs::Netcode, "Laurion::DECODE(OP_ReadBook) - Converting 164 byte packet to 28 byte server format");
+
+		IN(window);
+		IN(type);
+		IN(invslot);
+		IN(target_id);
+		memcpy(emu->txtfile, eq->txtfile, sizeof(emu->txtfile));
 
 		FINISH_DIRECT_DECODE();
 	}
@@ -3753,6 +3965,22 @@ namespace Laurion
 		SETUP_DIRECT_DECODE(MerchantClick_Struct, structs::MerchantClickRequest_Struct);
 
 		IN(npc_id);
+
+		FINISH_DIRECT_DECODE();
+	}
+
+	DECODE(OP_LootItem)
+	{
+		DECODE_LENGTH_EXACT(structs::LootingItem_Struct);
+		SETUP_DIRECT_DECODE(LootingItem_Struct, structs::LootingItem_Struct);
+
+		Log(Logs::Detail, Logs::Netcode, "Laurion::DECODE(OP_LootItem)");
+
+		IN(lootee);
+		IN(looter);
+		emu->slot_id = eq->slot_id; // Laurion uses same slot mapping as server
+		IN(auto_loot);
+		// eq->unknown16 is ignored (Laurion-specific field)
 
 		FINISH_DIRECT_DECODE();
 	}
@@ -3839,6 +4067,116 @@ namespace Laurion
 		return std::stoi(number);
 	}
 
+	// Blob layout for client parser sub_14065bd70 (item definition stream). Used only for Dragon's Hoard length-prefixed blob.
+	// Client parser needs enough blob data to complete without running off the end. We write known fields at fixed offsets, then pad to total size.
+	// [DH_CLEANUP_R1] Removed DH_BLOB_ENTRY and other investigation-only logging from blob serializer.
+	static const size_t LAURION_BLOB_TOTAL_SIZE = 4096;
+	static void SerializeItemDefinitionLaurionBlob(SerializeBuffer& buffer, const EQ::ItemData* item) {
+		// byte 0: Type / ItemClass (arg1[0xe9])
+		buffer.WriteUInt8(item->ItemClass);
+		// Name: null-terminated string (variable length)
+		// (commented out: fixed 64-byte zero-padded)
+		// char name64[64];
+		// memset(name64, 0, sizeof(name64));
+		// size_t nameLen = std::min(strlen(item->Name), (size_t)63);
+		// memcpy(name64, item->Name, nameLen);
+		// buffer.WriteBytes(name64, 64);
+		// [DH_SHORT_NAME_REVERTED]
+		size_t name_consumed = strlen(item->Name) + 1;
+		buffer.WriteBytes(item->Name, name_consumed);
+		// Lore: null-terminated string (variable length)
+		// (commented out: fixed 80-byte zero-padded)
+		// char lore80[80];
+		// memset(lore80, 0, sizeof(lore80));
+		// size_t loreLen = std::min(strlen(item->Lore), (size_t)79);
+		// memcpy(lore80, item->Lore, loreLen);
+		// buffer.WriteBytes(lore80, 80);
+		size_t lore_consumed = strlen(item->Lore) + 1;
+		buffer.WriteBytes(item->Lore, lore_consumed);
+		// LogInfo("[DH_BLOB_FIX] item_id={} name_len={} lore_len={}", item->ID, name_consumed, lore_consumed);
+		// IDFile, IDFile2, ItemNumber, Weight, ... (offsets now variable after Name/Lore)
+		// bytes 145-148: IDFile (int32)
+		buffer.WriteInt32(ExtractIDFile(item->IDFile));
+		// bytes 149-152: IDFile2 (int32, 0)
+		buffer.WriteInt32(0);
+		// bytes 153-156: ID / ItemNumber (int32)
+		buffer.WriteInt32(static_cast<int32_t>(item->ID));
+		// bytes 157-160: Weight (int32)
+		buffer.WriteInt32(item->Weight);
+		// byte 161: NoRent (uint8)
+		buffer.WriteUInt8(item->NoRent);
+		// byte 162: NoDrop / IsDroppable (uint8)
+		buffer.WriteUInt8(item->NoDrop);
+		// byte 163: Attuneable (uint8)
+		buffer.WriteUInt8(item->Attuneable);
+		// byte 164: Size (uint8)
+		buffer.WriteUInt8(item->Size);
+		// bytes 165-168: Slots / EquipSlots (int32)
+		buffer.WriteInt32(static_cast<int32_t>(item->Slots));
+		// bytes 169-172: Cost (uint32), ensure nonzero
+		buffer.WriteUInt32(std::max(static_cast<uint32_t>(item->Price), 1u));
+		// bytes 173-176: Icon / IconNumber (int32)
+		buffer.WriteInt32(item->Icon);
+		// byte 177: eGMRequirement (uint8, 0)
+		buffer.WriteUInt8(0);
+		// [DH_BLOB_STATS] Extended blob fields — resistances, stats, AC, HP, classes/races (sub_14065bd70):
+		// +0xea: unknown flag (1 byte)
+		buffer.WriteUInt8(0);
+		// +0xf5: CR (1 byte)
+		buffer.WriteUInt8(static_cast<uint8_t>(item->CR));
+		// +0xf8: DR (1 byte)
+		buffer.WriteUInt8(static_cast<uint8_t>(item->DR));
+		// +0xf9: PR (1 byte)
+		buffer.WriteUInt8(static_cast<uint8_t>(item->PR));
+		// +0xf7: MR (1 byte)
+		buffer.WriteUInt8(static_cast<uint8_t>(item->MR));
+		// +0xf6: FR (1 byte)
+		buffer.WriteUInt8(static_cast<uint8_t>(item->FR));
+		// +0xfa: SVCorruption (1 byte)
+		buffer.WriteUInt8(static_cast<uint8_t>(item->SVCorruption));
+		// +0xfb: STR (1 byte)
+		buffer.WriteUInt8(static_cast<uint8_t>(item->AStr));
+		// +0xfc: STA (1 byte)
+		buffer.WriteUInt8(static_cast<uint8_t>(item->ASta));
+		// +0xfd: AGI (1 byte)
+		buffer.WriteUInt8(static_cast<uint8_t>(item->AAgi));
+		// +0xfe: DEX (1 byte)
+		buffer.WriteUInt8(static_cast<uint8_t>(item->ADex));
+		// +0xff: CHA (1 byte)
+		buffer.WriteUInt8(static_cast<uint8_t>(item->ACha));
+		// +0x100: INT (1 byte)
+		buffer.WriteUInt8(static_cast<uint8_t>(item->AInt));
+		// +0x101: WIS (1 byte)
+		buffer.WriteUInt8(static_cast<uint8_t>(item->AWis));
+		// +0x104: HP (4 bytes)
+		buffer.WriteInt32(item->HP);
+		// +0x108: Mana (4 bytes)
+		buffer.WriteInt32(item->Mana);
+		// +0x56c: Endurance (4 bytes) — ItemData::Endur
+		buffer.WriteInt32(item->Endur);
+		// +0x10c: AC (4 bytes)
+		buffer.WriteInt32(item->AC);
+		// +0x574: HP regen (4 bytes)
+		buffer.WriteInt32(item->Regen);
+		// +0x578: Mana regen (4 bytes)
+		buffer.WriteInt32(item->ManaRegen);
+		// +0x57c: Endurance regen (4 bytes)
+		buffer.WriteInt32(item->EnduranceRegen);
+		// +0x140: Classes (4 bytes)
+		buffer.WriteInt32(static_cast<int32_t>(item->Classes));
+		// +0x144: Races (4 bytes)
+		buffer.WriteInt32(static_cast<int32_t>(item->Races));
+		// +0x148: Deity (4 bytes)
+		buffer.WriteInt32(static_cast<int32_t>(item->Deity));
+		// pad to LAURION_BLOB_TOTAL_SIZE (1469)
+		const size_t pos = buffer.size();
+		if (pos < LAURION_BLOB_TOTAL_SIZE) {
+			const size_t pad_len = LAURION_BLOB_TOTAL_SIZE - pos;
+			static uint8_t zeroes[LAURION_BLOB_TOTAL_SIZE] = {0};
+			buffer.WriteBytes(reinterpret_cast<const char*>(zeroes), pad_len);
+		}
+	}
+
 	// Helper Functions
 	void SerializeItemDefinition(SerializeBuffer& buffer, const EQ::ItemData* item) {
 		//u8 Type;
@@ -3871,10 +4209,10 @@ namespace Laurion
 
 		//s32 ItemNumber;
 		buffer.WriteUInt32(item->ID);
-		
+
 		//s32 Weight;
 		buffer.WriteInt32(item->Weight);
-		
+
 		//bool NoRent;
 		buffer.WriteUInt8(item->NoRent);
 
@@ -3914,7 +4252,7 @@ namespace Laurion
 		buffer.WriteInt8(item->MR);
 		buffer.WriteInt8(item->FR);
 		buffer.WriteInt8(item->SVCorruption);
-		
+
 		//s8 STR;
 		//s8 STA;
 		//s8 AGI;
@@ -3945,7 +4283,7 @@ namespace Laurion
 		buffer.WriteInt32(item->Regen);
 		buffer.WriteInt32(item->ManaRegen);
 		buffer.WriteInt32(item->EnduranceRegen);
-		
+
 		//u32 Classes;
 		//u32 Races;
 		//u32 Deity;
@@ -3961,7 +4299,7 @@ namespace Laurion
 		buffer.WriteUInt32(item->SkillModMax);
 		buffer.WriteInt32(item->SkillModType);
 		buffer.WriteInt32(0); //unsupported atm
-		
+
 		//s32 BaneDMGRace;
 		//s32 BaneDMGBodyType;
 		//s32 BaneDMGRaceValue;
@@ -4009,7 +4347,7 @@ namespace Laurion
 		//u32 Prestige;
 		buffer.WriteUInt32(item->Color);
 		buffer.WriteUInt32(0); //unsupported atm
-		
+
 		//u8 ItemClass;
 		buffer.WriteUInt8(item->ItemType);
 
@@ -4024,7 +4362,7 @@ namespace Laurion
 		buffer.WriteUInt32(item->EliteMaterial);
 		buffer.WriteUInt32(item->HerosForgeModel);
 		buffer.WriteUInt32(0); //unsupported atm
-		
+
 		//float MerchantGreedMod;
 		buffer.WriteFloat(item->SellRate);
 
@@ -4057,7 +4395,7 @@ namespace Laurion
 			buffer.WriteUInt8(item->AugSlotVisible[j]);
 			buffer.WriteUInt8(item->AugSlotUnk2[j]); //not entirely supported atm
 		}
-		
+
 		//s32 LDType;
 		//s32 LDTheme;
 		//s32 LDCost;
@@ -4107,7 +4445,7 @@ namespace Laurion
 
 		//s32 SolventItemID;
 		buffer.WriteUInt32(item->AugDistiller);
-		
+
 		//s32 AnimationOverride;
 		buffer.WriteInt32(-1); //unsupported atm
 
@@ -4122,7 +4460,7 @@ namespace Laurion
 
 		//u32 StackSize;
 		buffer.WriteUInt32(item->ID == PARCEL_MONEY_ITEM_ID ? 0x7FFFFFFF : ((item->Stackable ? item->StackSize : 0)));
-		
+
 		//bool bNoStorage;
 		buffer.WriteUInt8(item->NoTransfer);
 
@@ -4268,8 +4606,8 @@ namespace Laurion
 		buffer.WriteInt32(0);
 		buffer.WriteInt32(0);
 		buffer.WriteString("");
-		buffer.WriteInt32(0);		
-		
+		buffer.WriteInt32(0);
+
 		//s32 RightClickScriptID;
 		buffer.WriteInt32(0); //unsupported atm
 
@@ -4371,13 +4709,13 @@ namespace Laurion
 		//u8 SocketSubClassCount;
 		//s32 SocketSubClass[SocketSubClassCount];
 		buffer.WriteUInt8(0); //unsupported atm
-		
+
 		//bool Collectible;
 		buffer.WriteUInt8(0); //unsupported atm
 
 		//bool NoDestroy;
 		buffer.WriteUInt8(0); //unsupported atm
-		
+
 		//bool bNoNPC;
 		buffer.WriteUInt8(0); //unsupported atm
 
@@ -4414,18 +4752,17 @@ namespace Laurion
 		buffer.WriteUInt32(0); //unsupported atm
 	}
 
-	void SerializeItem(SerializeBuffer& buffer, const EQ::ItemInstance* inst, int16 slot_id_in, uint8 depth, ItemPacketType packet_type) {
+	void SerializeItem(SerializeBuffer& buffer, const EQ::ItemInstance* inst, int16 slot_id_in, uint8 depth, ItemPacketType packet_type, bool prepend_dh_count) {
+		(void)prepend_dh_count;
 		const EQ::ItemData* item = inst->GetUnscaledItem();
 
-		//char ItemGUID[];
-		auto item_guid = fmt::format("{:016}", inst->GetSerialNumber());
-		buffer.WriteString(item_guid);
+		// DEBUG: Hex dump for Dragon's Hoard virtual container (slots 5000-5199)
+		bool is_dragon_hoard = (slot_id_in >= 5000 && slot_id_in <= 5199);
+		size_t buffer_start_pos = buffer.size();
 
-		//u32 StackCount;
-		auto stacksize =
-			item->ID == PARCEL_MONEY_ITEM_ID ? inst->GetPrice() : (inst->IsStackable() ? ((inst->GetCharges() > 1000)
-				? 0xFFFFFFFF : inst->GetCharges()) : 1);
-		buffer.WriteUInt32(stacksize);
+		// Only Dragon's Hoard (5000-5199) uses client-aligned 59-byte header; all other items use original layout.
+		// Non-DH: original 16-char ASCII decimal string (e.g. "0000000000000058"). DH: 16-byte binary GUID (serial in low 8 bytes LE).
+		auto item_guid = fmt::format("{:016}", inst->GetSerialNumber());
 
 		structs::InventorySlot_Struct slot_id{};
 		switch (packet_type) {
@@ -4437,121 +4774,192 @@ namespace Laurion
 			break;
 		}
 
-		//u32 slot_type;
-		buffer.WriteUInt32(inst->GetMerchantSlot() ? invtype::typeMerchant : slot_id.Type);
-		//s16 main_slot;
-		//s16 sub_slot;
-		//s16 aug_slot;
-		buffer.WriteInt16(inst->GetMerchantSlot() ? inst->GetMerchantSlot() : slot_id.Slot);
-		buffer.WriteInt16(inst->GetMerchantSlot() ? 0xffff : slot_id.SubIndex);
-		buffer.WriteInt16(inst->GetMerchantSlot() ? 0xffff : slot_id.AugIndex);
+		auto stacksize =
+			item->ID == PARCEL_MONEY_ITEM_ID ? inst->GetPrice() : (inst->IsStackable() ? ((inst->GetCharges() > 1000)
+				? 0xFFFFFFFF : inst->GetCharges()) : 1);
+		uint32_t slot_type_val = inst->GetMerchantSlot() ? invtype::typeMerchant : slot_id.Type;
+		uint64_t price = inst->GetPrice();
+		uint32_t merchant_qty = inst->GetMerchantSlot() ? inst->GetMerchantCount() : 1;
+		uint32_t script_index = inst->IsScaling() ? (inst->GetExp() / 100) : 0;
+		uint64_t merchant_slot = inst->GetMerchantSlot() ? inst->GetMerchantSlot() : inst->GetSerialNumber();
+		uint32_t recast = inst->GetRecastTimestamp();
+		auto charges = (inst->IsStackable() ? (item->MaxCharges ? 1 : 0) : ((inst->GetCharges() > 254) ? -1 : inst->GetCharges()));
+		int32_t nodrop = inst->IsAttuned() ? 1 : 0;
 
-		//u64 price;
-		buffer.WriteUInt64(inst->GetPrice());
-
-		//u32 MerchantQuantity;
-		buffer.WriteUInt32(inst->GetMerchantSlot() ? inst->GetMerchantCount() : 1);
-
-		//u32 ScriptIndex;
-		buffer.WriteUInt32(inst->IsScaling() ? (inst->GetExp() / 100) : 0);
-
-		//u64 MerchantSlot;
-		buffer.WriteUInt64(inst->GetMerchantSlot() ? inst->GetMerchantSlot() : inst->GetSerialNumber());
-
-		//u32 LastCastTime;
-		buffer.WriteUInt32(inst->GetRecastTimestamp());
-
-		//s32 Charges;
-		auto charges = (inst->IsStackable() ? (item->MaxCharges ? 1 : 0) : ((inst->GetCharges() > 254)
-			? -1
-			: inst->GetCharges()));
-
-		buffer.WriteInt32(charges);
-
-		//s32 NoDropFlag;
-		buffer.WriteInt32(inst->IsAttuned() ? 1 : 0);
-
-		//s32 Power;
-		buffer.WriteInt32(0);
-
-		//s32 AugFlag;
-		buffer.WriteInt32(0);
-
-		//bool bConvertable;
-		buffer.WriteInt8(0);
-
-		//u32 ConvertItemNameLength;
-		buffer.WriteInt32(0);
-
-		//char ConvertItemName[ConvertItemNameLength];
-
-		//u32 ConvertItemID;
-		buffer.WriteInt32(0);
-
-		//u32 Open;
-		buffer.WriteInt32(0);
-
-		//bool EvolvingItem;
-		buffer.WriteInt8(item->EvolvingItem);
-
-		//EvoData evoData;
-		if (item->EvolvingItem > 0) {
-			//s32 GroupId;
-			buffer.WriteInt32(0);
-
-			//s32 EvolvingCurrentLevel;
-			buffer.WriteInt32(item->EvolvingLevel);
-
-			//double EvolvingExpPct;
-			buffer.WriteDouble(0.0);
-			
-			//s32 EvolvingMaxLevel;
-			buffer.WriteInt32(item->EvolvingMax);
-
-			//s32 LastEquipped;
-			buffer.WriteInt32(0);
+		// [DH_CLEANUP_R1] Removed DH_GUID_INSPECT / DH_NO_COUNT / DH_BLOB_* / DH_LAYOUT_V2 / DH_RAW_BYTES investigation logs and obsolete commented blocks; kept DH_GUID_UNIQUE, [DH_POST_BLOB_ORDER], [DH_BLOB_HERE].
+		if (is_dragon_hoard) {
+			uint8_t guid_binary[16] = {0};
+			uint32_t item_id = static_cast<uint32_t>(item->ID);
+			uint64_t serial = static_cast<uint64_t>(inst->GetSerialNumber());
+			for (int i = 0; i < 4; ++i) {
+				guid_binary[i] = static_cast<uint8_t>((item_id >> (i * 8)) & 0xFF);
+			}
+			for (int i = 0; i < 8; ++i) {
+				guid_binary[4 + i] = static_cast<uint8_t>((serial >> (i * 8)) & 0xFF);
+			}
+			// [DH_GUID_UNIQUE] Overwrite serial high dword (bytes 8..11) with a session-unique counter to avoid GUID registry cache hits.
+			static uint32_t dh_session_counter = 0;
+			++dh_session_counter;
+			for (int i = 0; i < 4; ++i) {
+				guid_binary[8 + i] = static_cast<uint8_t>((dh_session_counter >> (i * 8)) & 0xFF);
+			}
+			for (int i = 0; i < 3; ++i) {
+				guid_binary[12 + i] = static_cast<uint8_t>((item_id >> (i * 8)) & 0xFF);
+			}
+			for (int i = 0; i < 15; ++i) {
+				if (guid_binary[i] == 0)
+					guid_binary[i] |= 0x01;
+			}
+			guid_binary[15] = 0x00;
+			buffer.WriteBytes(guid_binary, 16);
+			// --- ALL post-GUID writes before blob (commented out — replaced by sub_14029dc10 layout below) ---
+			// Post-GUID: client sub_14029dc10 reads uint32, uint32, uint16, uint16, uint16, uint64, uint32, uint32, uint64 (then MerchantSlot at item+0xf0).
+			// int16_t slot_field = inst->GetMerchantSlot() ? inst->GetMerchantSlot() : (slot_id.Slot + 1);
+			// buffer.WriteInt16(slot_field);
+			// buffer.WriteInt16(inst->GetMerchantSlot() ? (int16_t)0xffff : slot_id.SubIndex);
+			// buffer.WriteInt16(inst->GetMerchantSlot() ? (int16_t)0xffff : slot_id.AugIndex);
+			// buffer.WriteUInt32(stacksize);
+			// buffer.WriteUInt32(slot_type_val);
+			// buffer.WriteUInt64(price);
+			// buffer.WriteUInt32(merchant_qty);
+			// buffer.WriteUInt32(script_index);
+			// buffer.WriteUInt64(merchant_slot);
+			// buffer.WriteUInt32(recast);
+			// buffer.WriteInt8(0);
+			// buffer.WriteUInt32(0);  // rsi+0x74 Charges
+			// buffer.WriteUInt32(0);  // rsi[0x10] NoDrop
+			// buffer.WriteUInt8(0);   // EvolvingItem
+			// buffer.WriteUInt32(6);
+			// buffer.WriteUInt16(static_cast<uint16_t>(5000 + slot_id.Slot));
+			// buffer.WriteUInt16(0xFFFF);
+			// buffer.WriteUInt16(0xFFFF);
+			// buffer.WriteUInt32(0); buffer.WriteUInt32(0); buffer.WriteUInt8(0);
+			// buffer.WriteUInt32(0); buffer.WriteUInt32(0); buffer.WriteUInt32(static_cast<uint32_t>(item->Icon));
+			// buffer.WriteUInt32(0); buffer.WriteUInt32(0); buffer.WriteUInt8(0); buffer.WriteUInt32(0);
+			// buffer.WriteUInt32(item->ID);
+			// --- NEW LAYOUT matching sub_14029dc10 read sequence ---
+			uint32_t slot_1based = static_cast<uint32_t>(slot_id.Slot + 1);
+			// [DH_LAYOUT_FIX2] StackCount and ContainerType at top (deserializer expects these first).
+			// buffer.WriteUInt32((uint32_t)slot_1based);   // item+0x28 (slot)
+			// buffer.WriteUInt32(0);                       // item+0x68 (unknown)
+			buffer.WriteUInt32((uint32_t)stacksize);     // item+0x50 = StackCount
+			buffer.WriteUInt32(38);                      // item+0xd0 = ContainerType (38 = DH)
+			buffer.WriteUInt16((uint16_t)slot_1based);    // item+0xd4 (SubIndex slot?)
+			buffer.WriteUInt16(0xFFFF);                  // item+0xd6 (SubIndex = -1)
+			buffer.WriteUInt16(0xFFFF);                  // item+0xd8 (AugIndex = -1)
+			buffer.WriteUInt64(0);                       // item+0xe0 (unknown)
+			buffer.WriteUInt32(0);                       // item+0x08 (unknown)
+			buffer.WriteUInt32(1);                       // [DH_REF_MATCH] item+0xc8 = 1 matching reference packet at 0x2b
+			buffer.WriteUInt64((uint64_t)merchant_slot); // item+0xf0 = MerchantSlot/serial
+			buffer.WriteUInt32(0);                       // item+0x7c (unknown)
+			buffer.WriteUInt32(0);                       // item+0x5c (unknown)
+			// [DH_LAYOUT_FIX2] StackCount now written at top; comment out duplicate here.
+			// buffer.WriteUInt32((uint32_t)stacksize);     // item+0x50 = StackCount
+			buffer.WriteUInt32(0);                       // item+0x84 (unknown)
+			buffer.WriteUInt32(0);                       // item+0x8c (unknown)
+			buffer.WriteUInt8(0);                       // item+0xbc = bConvertable
+			// GlobalIndex written here via sub_1405647b0 equivalent (existing — keep as-is)
+			buffer.WriteUInt32(6);
+			buffer.WriteUInt16(static_cast<uint16_t>(5000 + slot_id.Slot));
+			buffer.WriteUInt16(0xFFFF);
+			buffer.WriteUInt16(0xFFFF);
+			buffer.WriteUInt32((uint32_t)item->Icon);   // item+0x74 = IconNumber
+			buffer.WriteUInt32(0);                       // item+0x80 (unknown)
+			buffer.WriteUInt8(0);                       // evolving item gate = 0
+			// post-evolving-block fields (42-byte header equivalent)
+			buffer.WriteUInt32(0);                      // item+0x4c
+			buffer.WriteUInt32(0);                      // item+0xcc
+			buffer.WriteUInt32((uint32_t)item->Icon);   // item+0x70 = IconNumber (display)
+			// buffer.WriteUInt32(0);                      // item+0x3c
+			buffer.WriteUInt32(0xFFFFFFFF);              // [DH_REF_MATCH] item+0x3c = -1 matching reference packet
+			buffer.WriteUInt32(0);                      // item+0xe8
+			buffer.WriteUInt32(0);                      // item+0x130
+			buffer.WriteUInt8(0);                       // item+0x89
+			buffer.WriteUInt32(0);                      // item+0x38
+			buffer.WriteUInt32((uint32_t)item->ID);     // item+0x54 = ItemNumber for registry
+			{
+				SerializeBuffer blob_buf;
+				SerializeItemDefinitionLaurionBlob(blob_buf, item);
+				// [DH_BLOB_HERE]
+				buffer.WriteBytes(blob_buf.buffer(), blob_buf.size());
+			}
+			// Post-blob: aug count → aug data → EvolvingItem → container count → container data → rsi[9].b → uint64 → uint32 (sub_1401d4ab0 tail).
+			buffer.WriteUInt32(0);   // aug count = 0 (deserializer reads this, loops if nonzero) — [DH_POST_BLOB_ORDER]
+			// aug data: (none when aug count == 0) [DH_POST_BLOB_ORDER]
+			buffer.WriteUInt8(0);    // EvolvingItem byte (rsi[9]) — [DH_POST_BLOB_ORDER]
+			buffer.WriteUInt32(0);   // container count = 0 (deserializer reads this, loops if nonzero) — [DH_POST_BLOB_ORDER]
+			// container data: (none when container count == 0) [DH_POST_BLOB_ORDER]
+			buffer.WriteUInt8(0);    // rsi[9].b second read — [DH_POST_BLOB_ORDER]
+			buffer.WriteUInt64(0);   // sub_1401d4ab0 reads uint64 → item+0x98 — [DH_POST_BLOB_ORDER]
+			buffer.WriteUInt32(0);   // deserializer reads uint32 → item+0x100 — [DH_POST_BLOB_ORDER]
+			// LogInfo("[SERIALIZE_ITEM_5000] Starting serialization for slot {} (Dragon's Hoard)", (int)slot_id_in);
+			// LogInfo("[SERIALIZE_ITEM_5000] ItemData: ID={}, Name={}, ItemClass={}, BagSlots={}, StackSize={}, Stackable={}",
+			// 	item->ID, item->Name, item->ItemClass, item->BagSlots, item->StackSize, item->Stackable);
+			// LogInfo("[SERIALIZE_ITEM_5000] ItemInstance: Charges={}, IsStackable={}, SerialNumber={}",
+			// 	inst->GetCharges(), inst->IsStackable(), inst->GetSerialNumber());
+		} else {
+			// Original layout for all other items (pre-login, char select, bank, equipment, etc.). Match _test: GUID as null-terminated string.
+			buffer.WriteString(item_guid);
+			buffer.WriteUInt32(stacksize);
+			buffer.WriteUInt32(slot_type_val);
+			buffer.WriteInt16(inst->GetMerchantSlot() ? inst->GetMerchantSlot() : slot_id.Slot);
+			buffer.WriteInt16(inst->GetMerchantSlot() ? (int16_t)0xffff : slot_id.SubIndex);
+			buffer.WriteInt16(inst->GetMerchantSlot() ? (int16_t)0xffff : slot_id.AugIndex);
+			buffer.WriteUInt64(price);
+			buffer.WriteUInt32(merchant_qty);
+			buffer.WriteUInt32(script_index);
+			buffer.WriteUInt64(merchant_slot);
+			buffer.WriteUInt32(recast);
+			buffer.WriteInt32(charges);
+			buffer.WriteInt32(nodrop);
+			buffer.WriteInt32(0);   // Power
+			buffer.WriteInt32(0);   // AugFlag
+			buffer.WriteInt8(0);    // bConvertable
+			buffer.WriteInt32(0);   // ConvertItemNameLength
+			buffer.WriteInt32(0);   // ConvertItemID
+			buffer.WriteInt32(0);   // Open
 		}
 
-		uint32 ornamentation_icon = (inst->GetOrnamentationIcon() ? inst->GetOrnamentationIcon() : 0);
-		uint32 hero_model = 0;
+		if (!is_dragon_hoard) {
+			//bool EvolvingItem
+			buffer.WriteInt8(item->EvolvingItem);
 
-		//s32 ActorTag1;
-		//s32 ActorTag2;
-		if (inst->GetOrnamentationIDFile()) {
-			hero_model = inst->GetOrnamentHeroModel(EQ::InventoryProfile::CalcMaterialFromSlot(slot_id_in));
+			//EvoData evoData;
+			if (item->EvolvingItem > 0) {
+				buffer.WriteInt32(0);
+				buffer.WriteInt32(item->EvolvingLevel);
+				buffer.WriteDouble(0.0);
+				buffer.WriteInt32(item->EvolvingMax);
+				buffer.WriteInt32(0);
+			}
 
-			buffer.WriteInt32(inst->GetOrnamentationIDFile());
-			buffer.WriteInt32(inst->GetOrnamentationIDFile());
-		}
-		else {
+			uint32 ornamentation_icon = (inst->GetOrnamentationIcon() ? inst->GetOrnamentationIcon() : 0);
+			uint32 hero_model = 0;
+			if (inst->GetOrnamentationIDFile()) {
+				hero_model = inst->GetOrnamentHeroModel(EQ::InventoryProfile::CalcMaterialFromSlot(slot_id_in));
+				buffer.WriteInt32(inst->GetOrnamentationIDFile());
+				buffer.WriteInt32(inst->GetOrnamentationIDFile());
+			}
+			else {
+				buffer.WriteInt32(0);
+				buffer.WriteInt32(0);
+			}
+			buffer.WriteInt32(ornamentation_icon);
+			buffer.WriteInt32(-1);
+			buffer.WriteInt32(hero_model);
 			buffer.WriteInt32(0);
+			buffer.WriteUInt8(0);
+			buffer.WriteInt32(-1);
 			buffer.WriteInt32(0);
+
+			//ItemDefinition Item
+			SerializeItemDefinition(buffer, item);
 		}
-
-		//s32 OrnamentationIcon;
-		//s32 ArmorType;
-		//s32 NewArmorID;
-		//u32 Tint;
-		buffer.WriteInt32(ornamentation_icon);
-		buffer.WriteInt32(-1);
-		buffer.WriteInt32(hero_model);
-		buffer.WriteInt32(0);
-
-		//bool bCopied;
-		buffer.WriteUInt8(0);
-
-		//s32 RealEstateID;
-		buffer.WriteInt32(-1);
-		//s32 RespawnTime;
-		buffer.WriteInt32(0);
-
-		//ItemDefinition Item;
-		SerializeItemDefinition(buffer, item);
 
 		//u32 RealEstateArrayCount;
 		buffer.WriteInt32(0);
 		//s32 RealEstateArray[RealEstateArrayCount];
-		
+
 		//bool bRealEstateItemPlaceable;
 		buffer.WriteInt8(0);
 
@@ -4559,11 +4967,13 @@ namespace Laurion
 		uint32 subitem_count = 0;
 
 		int16 SubSlotNumber = EQ::invbag::SLOT_INVALID;
-		
+
 		if (slot_id_in <= EQ::invslot::GENERAL_END && slot_id_in >= EQ::invslot::GENERAL_BEGIN)
 			SubSlotNumber = EQ::invbag::GENERAL_BAGS_BEGIN + ((slot_id_in - EQ::invslot::GENERAL_BEGIN) * EQ::invbag::SLOT_COUNT);
 		else if (slot_id_in == EQ::invslot::slotCursor)
 			SubSlotNumber = EQ::invbag::CURSOR_BAG_BEGIN;
+		else if (slot_id_in >= 5000 && slot_id_in <= 5199)
+			SubSlotNumber = slot_id_in; // Dragon's Hoard: 5000-5199
 		else if (slot_id_in <= EQ::invslot::BANK_END && slot_id_in >= EQ::invslot::BANK_BEGIN)
 			SubSlotNumber = EQ::invbag::BANK_BAGS_BEGIN + ((slot_id_in - EQ::invslot::BANK_BEGIN) * EQ::invbag::SLOT_COUNT);
 		else if (slot_id_in <= EQ::invslot::SHARED_BANK_END && slot_id_in >= EQ::invslot::SHARED_BANK_BEGIN)
@@ -4599,6 +5009,110 @@ namespace Laurion
 		buffer.WriteUInt64(0); //unsupported atm
 		//s32 Luck;
 		buffer.WriteInt32(0); //unsupported atm
+		
+		// DEBUG: Hex dump for Dragon's Hoard — layout matches client sub_14029dc10 (first 59 bytes)
+		if (is_dragon_hoard) {
+			size_t serialized_size = buffer.size() - buffer_start_pos;
+			// LogInfo("[SERIALIZE_ITEM_5000] Serialization complete. Total bytes: {}", serialized_size);
+
+			const unsigned char* buf = buffer.buffer() + buffer_start_pos;
+
+			// LogInfo("[SERIALIZE_ITEM_5000] ItemGUID = 16 bytes binary (serial {} in low 8 bytes LE)", inst->GetSerialNumber());
+
+			// Hex dump first 128 bytes
+			// size_t dump_size = std::min(serialized_size, size_t(128));
+			// std::ostringstream hex_stream;
+			// hex_stream << std::hex << std::setfill('0');
+			// for (size_t i = 0; i < dump_size; i++) {
+			// 	if (i > 0 && i % 16 == 0) hex_stream << "\n";
+			// 	if (i % 16 == 0) hex_stream << std::setw(4) << i << ": ";
+			// 	hex_stream << std::setw(2) << (int)buf[i] << " ";
+			// }
+			// LogInfo("[SERIALIZE_ITEM_5000] First {} bytes (hex):\n{}", dump_size, hex_stream.str());
+
+			// Key fields — 4-byte count then 59-byte header at 0x04: guid(16) | slot(2) sub(2) aug(2) | stack, type, price, ...
+			if (serialized_size >= 0x3F) {
+				// LogInfo("[SERIALIZE_ITEM_5000] Key fields (count at 0x00, 59-byte header at 0x04):");
+				uint32_t count = *(uint32_t*)(buf + 0x00);
+				// LogInfo("  0x00-0x03 (4):   count           = {} (0x{:X})", count, count);
+				// LogInfo("  0x04-0x13 (16): guid_binary     = {:02x} {:02x} .. {:02x} {:02x} (byte15=null)", buf[0x04], buf[0x05], buf[0x12], buf[0x13]);
+				int16_t slot = *(int16_t*)(buf + 0x14);
+				int16_t sub = *(int16_t*)(buf + 0x16);
+				int16_t aug = *(int16_t*)(buf + 0x18);
+				// LogInfo("  0x14-0x19 (6):   Slot,Sub,Aug   = {}, {}, {}", slot, sub, aug);
+				uint32_t stack_count = *(uint32_t*)(buf + 0x1A);
+				// LogInfo("  0x1A-0x1D (4):   StackCount     = {} ({:#x})", stack_count, stack_count);
+				uint32_t slot_type = *(uint32_t*)(buf + 0x1E);
+				// LogInfo("  0x1E-0x21 (4):   Type           = {} (0x{:02X} = typeDragonHoard)", slot_type, slot_type);
+				uint64_t price = *(uint64_t*)(buf + 0x22);
+				// LogInfo("  0x22-0x29 (8):   Price          = {} ({:#018x})", price, price);
+				uint32_t mqty = *(uint32_t*)(buf + 0x2A);
+				uint32_t script = *(uint32_t*)(buf + 0x2E);
+				// LogInfo("  0x2A-0x2D (4):   MerchantQty    = {}", mqty);
+				// LogInfo("  0x2E-0x31 (4):   ScriptIndex    = {}", script);
+				uint64_t merch_slot = *(uint64_t*)(buf + 0x32);
+				// LogInfo("  0x32-0x39 (8):   MerchantSlot   = {} ({:#018x})", merch_slot, merch_slot);
+				uint32_t recast = *(uint32_t*)(buf + 0x3A);
+				uint8_t convert = buf[0x3E];
+				// LogInfo("  0x3A-0x3D (4):   Recast         = {}", recast);
+				// LogInfo("  0x3E     (1):   bConvertable   = {}", (int)convert);
+				if (serialized_size >= 0x43) {
+					int32_t charges = *(int32_t*)(buf + 0x3F);
+					int32_t nodrop = *(int32_t*)(buf + 0x43);
+					// LogInfo("  0x3F-0x42 (4):   Charges        = {}", charges);
+					// LogInfo("  0x43-0x46 (4):   NoDropFlag     = {}", nodrop);
+				}
+			}
+			// Raw bytes 0x3F..0x4B: 9 trailing bytes then 4-byte blob L. L=1469 at 0x48.
+			if (serialized_size >= 0x4C) {
+				std::ostringstream hex;
+				hex << std::hex << std::setfill('0');
+				for (int i = 0x3F; i <= 0x4B; i++)
+					hex << std::setw(2) << (int)buf[i] << " ";
+				// LogInfo("[SERIALIZE_ITEM_5000] 0x3F-0x4B (9 trail + L): {}", hex.str());
+				uint32_t blob_len_at_0x48 = *(uint32_t*)(buf + 0x48);
+				// LogInfo("[SERIALIZE_ITEM_5000] Blob L at 0x48 = {} (0x{:X})", blob_len_at_0x48, blob_len_at_0x48);
+			}
+			// Blob starts at packet offset 0x4C. First byte = arg1[0xe9] (ItemClass).
+			const size_t blob_start = 0x4C;
+			if (serialized_size >= blob_start + 16) {
+				uint8_t blob_first = buf[blob_start];
+				// LogInfo("[SERIALIZE_ITEM_5000] Blob byte 0 (arg1[0xe9] ItemClass) = {} (0x{:02X})", blob_first, blob_first);
+				std::ostringstream blob_hex;
+				blob_hex << std::hex << std::setfill('0');
+				for (size_t i = 0; i < 16; i++)
+					blob_hex << std::setw(2) << (int)buf[blob_start + i] << " ";
+				// LogInfo("[SERIALIZE_ITEM_5000] Blob bytes 0x00-0x0F: {}", blob_hex.str());
+			}
+			if (serialized_size >= blob_start + 0x98) {
+				std::ostringstream hex90;
+				hex90 << std::hex << std::setfill('0');
+				for (int i = 0x90; i <= 0x9B; i++)
+					hex90 << std::setw(2) << (int)buf[blob_start + i] << " ";
+				uint32_t blob_itemid = *(uint32_t*)(buf + blob_start + 0x91);
+				int32_t blob_weight = *(int32_t*)(buf + blob_start + 0x95);
+				// LogInfo("[SERIALIZE_ITEM_5000] Blob 0x90-0x9B (arg1+0xb0/b4): {}", hex90.str());
+				// LogInfo("[SERIALIZE_ITEM_5000] Blob ItemID at 0x91 = {} (0x{:X})  Weight at 0x95 = {}", blob_itemid, blob_itemid, blob_weight);
+			}
+		}
+		// [DH_LOG_CLEANUP_2] [REFERENCE_ITEM_RAW] one-time non-DH comparison dump disabled.
+		// One-time dump of a working non-DH packet for comparison with DH
+		// if (!is_dragon_hoard) {
+		// 	static bool logged = false;
+		// 	if (!logged) {
+		// 		logged = true;
+		// 		size_t ref_dump = std::min(buffer.size(), size_t(160));
+		// 		const unsigned char* ref_buf = reinterpret_cast<const unsigned char*>(buffer.buffer());
+		// 		std::ostringstream ref_hex;
+		// 		ref_hex << std::hex << std::setfill('0');
+		// 		for (size_t i = 0; i < ref_dump; i++) {
+		// 			if (i > 0 && i % 16 == 0) ref_hex << "\n";
+		// 			if (i % 16 == 0) ref_hex << std::setw(4) << i << ": ";
+		// 			ref_hex << std::setw(2) << (int)ref_buf[i] << " ";
+		// 		}
+		// 		LogInfo("[REFERENCE_ITEM_RAW] item_id={} ItemClass={} first {} bytes (hex):\n{}", item->ID, (unsigned)item->ItemClass, ref_dump, ref_hex.str());
+		// 	}
+		// }
 	}
 
 	static inline void ServerToLaurionConvertLinks(std::string& message_out, const std::string& message_in)
@@ -4608,10 +5122,31 @@ namespace Laurion
 			return;
 		}
 
-		auto segments = Strings::Split(message_in, '\x12');
-		for (size_t segment_iter = 0; segment_iter < segments.size(); ++segment_iter) {
-			if (segment_iter & 1) {
-				auto etag = std::stoi(segments[segment_iter].substr(0, 1));
+	auto segments = Strings::Split(message_in, '\x12');
+	for (size_t segment_iter = 0; segment_iter < segments.size(); ++segment_iter) {
+		if (segment_iter & 1) {
+		// Safety check: ensure segment is not empty and has valid content
+		if (segments[segment_iter].empty()) {
+			message_out += segments[segment_iter];
+			continue;
+		}
+		
+		// Check if first character is a digit (valid link tag)
+		// If not, this is probably plain text that happened to be between \x12 markers
+		if (!std::isdigit(static_cast<unsigned char>(segments[segment_iter][0]))) {
+			// Not a link tag, just append as-is
+			message_out += segments[segment_iter];
+			continue;
+		}
+		
+		int etag = 0;
+		try {
+			etag = std::stoi(segments[segment_iter].substr(0, 1));
+		} catch (const std::exception& e) {
+			// Failed to parse, append as-is
+			message_out += segments[segment_iter];
+			continue;
+		}
 
 				switch (etag) {
 				case 0:
@@ -4619,42 +5154,42 @@ namespace Laurion
 					size_t index = 1;
 					auto item_id = segments[segment_iter].substr(index, 5);
 					index += 5;
-					
+
 					auto aug1 = segments[segment_iter].substr(index, 5);
 					index += 5;
-					
+
 					auto aug2 = segments[segment_iter].substr(index, 5);
 					index += 5;
-					
+
 					auto aug3 = segments[segment_iter].substr(index, 5);
 					index += 5;
-					
+
 					auto aug4 = segments[segment_iter].substr(index, 5);
 					index += 5;
-					
+
 					auto aug5 = segments[segment_iter].substr(index, 5);
 					index += 5;
-					
+
 					auto aug6 = segments[segment_iter].substr(index, 5);
 					index += 5;
-					
+
 					auto is_evolving = segments[segment_iter].substr(index, 1);
 					index += 1;
-					
+
 					auto evolutionGroup = segments[segment_iter].substr(index, 4);
 					index += 4;
-					
+
 					auto evolutionLevel = segments[segment_iter].substr(index, 2);
 					index += 2;
-					
+
 					auto ornamentationIconID = segments[segment_iter].substr(index, 5);
 					index += 5;
-					
+
 					auto itemHash = segments[segment_iter].substr(index, 8);
 					index += 8;
-					
+
 					auto text = segments[segment_iter].substr(index);
-					
+
 					message_out.push_back('\x12');
 					message_out.push_back('0'); //etag item
 					message_out.append(item_id);
@@ -4845,7 +5380,7 @@ namespace Laurion
 			if (server_slot == EQ::invslot::slotCursor) {
 				LaurionSlot.Slot = invslot::slotCursor;
 			}
-			else 
+			else
 			{
 				LaurionSlot.Slot = server_slot;
 			}
@@ -4871,6 +5406,11 @@ namespace Laurion
 
 		else if (server_slot == EQ::invslot::SLOT_TRADESKILL_EXPERIMENT_COMBINE) {
 			LaurionSlot.Type = invtype::typeWorld;
+		}
+
+		else if (server_slot >= 5000 && server_slot <= 5199) {
+			LaurionSlot.Type = invtype::typeDragonHoard;
+			LaurionSlot.Slot = server_slot - 5000;
 		}
 
 		else if (server_slot <= EQ::invslot::BANK_END && server_slot >= EQ::invslot::BANK_BEGIN) {
@@ -4939,7 +5479,7 @@ namespace Laurion
 
 		return LaurionSlot;
 	}
-	
+
 	static inline uint32 ServerToLaurionCorpseMainSlot(uint32 server_corpse_slot)
 	{
 		uint32 LaurionSlot = invslot::SLOT_INVALID;
@@ -4995,12 +5535,22 @@ namespace Laurion
 
 		switch (laurion_slot.Type) {
 		case invtype::typePossessions: {
+			// Client uses Slot=35 for cursor; server uses slotCursor. Map 35 -> server cursor.
+			if (laurion_slot.SubIndex == invbag::SLOT_INVALID && laurion_slot.Slot == 35) {
+				server_slot = EQ::invslot::slotCursor;
+				break;
+			}
+			// No deposit button in DH UI — deposit is drag-only. Client uses Type=0 Slot 36..235 for DH list (200 slots after cursor).
+			if (laurion_slot.SubIndex == invbag::SLOT_INVALID && laurion_slot.Slot >= 36 && laurion_slot.Slot < 236) {
+				server_slot = invslot::DRAGON_HOARD_BEGIN + (laurion_slot.Slot - 36);
+				break;
+			}
 			if (laurion_slot.Slot >= invslot::POSSESSIONS_BEGIN && laurion_slot.Slot <= invslot::POSSESSIONS_END) {
 				if (laurion_slot.SubIndex == invbag::SLOT_INVALID) {
 					if (laurion_slot.Slot == invslot::slotCursor) {
 						server_slot = EQ::invslot::slotCursor;
-					} 
-					else if(laurion_slot.Slot == invslot::slotGeneral11 || laurion_slot.Slot == invslot::slotGeneral12) 
+					}
+					else if(laurion_slot.Slot == invslot::slotGeneral11 || laurion_slot.Slot == invslot::slotGeneral12)
 					{
 						return EQ::invslot::SLOT_INVALID;
 					}
@@ -5099,6 +5649,13 @@ namespace Laurion
 				server_slot = laurion_slot.Slot;
 			}
 
+			break;
+		}
+		case invtype::typeDragonHoard: {
+			// 200 slots: map client slot 0..199 to server 5000..5199
+			if (laurion_slot.Slot >= invslot::SLOT_BEGIN && laurion_slot.Slot < 200 && laurion_slot.SubIndex == invbag::SLOT_INVALID) {
+				server_slot = invslot::DRAGON_HOARD_BEGIN + laurion_slot.Slot;
+			}
 			break;
 		}
 		default: {
@@ -5307,6 +5864,10 @@ namespace Laurion
 			return item::ItemPacketType::ItemPacketGuildTribute;
 		case ItemPacketType::ItemPacketCharmUpdate:
 			return item::ItemPacketType::ItemPacketCharmUpdate;
+		case ItemPacketType::ItemPacketDragonHoard:
+			return item::ItemPacketType::ItemPacketDragonHoard;
+		case ItemPacketType::ItemPacketDragonHoardBatch:
+			return item::ItemPacketType::ItemPacketDragonHoard; // same client type; payload is count(4)+N×258
 		default:
 			return item::ItemPacketType::ItemPacketInvalid;
 		}

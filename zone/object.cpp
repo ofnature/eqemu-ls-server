@@ -495,8 +495,9 @@ void Object::CreateDeSpawnPacket(EQApplicationPacket* app)
 
 	auto co = (ClickObject_Struct*) app->pBuffer;
 
-	co->drop_id   = m_data.drop_id;
-	co->player_id = 0;
+	co->drop_id = m_data.drop_id;
+	// Note: player_id doesn't exist as a separate field in 64-bit client
+	// It's part of a union with drop_id, so setting drop_id is sufficient
 }
 
 bool Object::Process(){

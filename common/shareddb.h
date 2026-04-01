@@ -101,6 +101,18 @@ public:
 	bool UpdateSharedBankSlot(uint32 char_id, const EQ::ItemInstance *inst, int16 slot_id);
 	bool VerifyInventory(uint32 account_id, int16 slot_id, const EQ::ItemInstance *inst);
 	bool GetSharedBank(uint32 id, EQ::InventoryProfile *inv, bool is_charid);
+	// Dragon's Hoard (Laurion's Song) — account-based, 200 slots
+	uint32 GetDragonHoardCount(uint32 account_id);
+	int16 GetNextDragonHoardSlot(uint32 account_id);
+	bool SaveDragonHoardItem(uint32 account_id, int16 slot_id, const EQ::ItemInstance *inst);
+	bool DeleteDragonHoardItemBySerial(uint32 account_id, uint64 serial);
+	/** Set charges for a DH item by serial; if new_charges <= 0, deletes the row. Returns true on success. */
+	bool UpdateDragonHoardCharges(uint32 account_id, uint64 serial, int16 new_charges);
+	EQ::ItemInstance *GetDragonHoardItemBySerial(uint32 account_id, uint64 serial);
+	/** Return one item at slot_id (0-199) or nullptr; caller must delete. */
+	EQ::ItemInstance *GetDragonHoardItemBySlot(uint32 account_id, int16 slot_id);
+	/** Call fn(slot_id, inst) for each item in dragonhoard_items; caller must delete each inst. */
+	void GetDragonHoardItems(uint32 account_id, void (*fn)(int16 slot_id, EQ::ItemInstance *inst, void *ctx), void *ctx);
 	int32 GetSharedPlatinum(uint32 account_id);
 	bool SetSharedPlatinum(uint32 account_id, int32 amount_to_add);
 	bool GetInventory(uint32 char_id, EQ::InventoryProfile *inv);

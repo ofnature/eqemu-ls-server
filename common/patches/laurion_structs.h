@@ -39,12 +39,12 @@ namespace Laurion {
 
 		struct Membership_Struct
 		{
-			/*000*/ uint8 membership; //0 not gold, 2 gold
+			/*000*/ uint8 membership; // 0 not gold, 2 gold (1 byte, packed struct)
 			/*001*/ uint32 races;	// Seen ff ff 01 00
 			/*005*/ uint32 classes;	// Seen ff ff 01 00
 			/*009*/ uint32 entrysize; // Seen 33
 			/*013*/ int32 entries[33]; // Most -1, 1, and 0 for Gold Status
-			/*145*/
+			/*145*/ // Total = 145 bytes (PACKED struct, no padding)
 		};
 
 		struct Membership_Entry_Struct
@@ -396,6 +396,23 @@ namespace Laurion {
 			/*04*/ struct ZonePoint_Entry zpe[0]; // Always add one extra to the end after all zonepoints
 		};
 
+		// Feature setup packets - client sends these before opening features
+		struct DragonHoardFeatureSetup_Struct {
+			uint8 data[80];  // 80 bytes - pass through for now
+		};
+
+		struct PersonalDepotFeatureSetup_Struct {
+			uint8 data[148];  // 148 bytes - pass through for now
+		};
+
+		struct FeatureSetup3_Struct {
+			uint8 data[16];  // 16 bytes - pass through for now
+		};
+
+		struct FeatureSetup4_Struct {
+			uint8 data[2];  // 2 bytes - pass through for now
+		};
+
 		struct EnterWorld_Struct {
 			/*000*/	char	name[64];
 			/*064*/	int32	unknown1;
@@ -644,19 +661,18 @@ namespace Laurion {
 			/*10*/
 		};
 
-		struct CastSpell_Struct
-		{
-			/*00*/	uint32	slot;
-			/*04*/	uint32	spell_id;
-			/*08*/	CastSpellInventorySlot_Struct inventory_slot; 
-			/*18*/	uint32	target_id;
-			/*22*/	uint32	spell_crc; 
-			/*26*/  float y_pos;
-			/*30*/  float x_pos;
-			/*34*/  float z_pos;
-			/*38*/	uint8 unknown; //not sure, might also be before y_pos; only ever seen zero for both but should be easy to figure out later
-			/*39*/
-		};
+#pragma pack(push, 1)
+	struct CastSpell_Struct
+	{
+		/*00*/	uint32	slot;
+		/*04*/	uint32	spell_id;
+		/*08*/	uint32	inventoryslot;  // 0xFFFFFFFF = normal cast
+		/*12*/	uint8	unknown_padding[6];  // 6 bytes of padding (12-17)
+		/*18*/	uint32	target_id;
+		/*22*/	uint8	unknown_trailing[17];  // Remaining bytes (22-38)
+		/*39*/
+	};
+#pragma pack(pop)
 
 		struct EQAffectSlot_Struct {
 			/*00*/ int32 slot;
@@ -1003,14 +1019,41 @@ namespace Laurion {
 			/*08*/
 		};
 
-		struct Stun_Struct { // 8 bytes total
-			/*000*/	uint32	duration; // Duration of stun
-			/*004*/	uint8	unknown004; // seen 0
-			/*005*/	uint8	unknown005; // seen 163
-			/*006*/	uint8	unknown006; // seen 67
-			/*007*/	uint8	unknown007; // seen 0
-			/*008*/
-		};
+	struct Stun_Struct { // 8 bytes total
+		/*000*/	uint32	duration; // Duration of stun
+		/*004*/	uint8	unknown004; // seen 0
+		/*005*/	uint8	unknown005; // seen 163
+		/*006*/	uint8	unknown006; // seen 67
+		/*007*/	uint8	unknown007; // seen 0
+		/*008*/
+	};
+
+	/*
+	** Book Request Struct
+	** Client requesting to read a book/note/scroll
+	** Size: 164 bytes (Laurion's Song expanded from 28 bytes)
+	** Used In: OP_ReadBook
+	** Last Updated: Dec 23, 2025
+	*/
+	struct BookRequest_Struct {
+		/*000*/	uint8	window;		// where to display the text (0xFF means new window)
+		/*001*/	uint8	type;		// type: 0=scroll, 1=book, 2=item info
+		/*002*/	int16	invslot;	// inventory slot
+		/*004*/	int32	target_id;	// target entity id
+		/*008*/	char	txtfile[20];	// text file name
+		/*028*/	uint8	unknown028[136];	// Laurion's Song expansion - unknown purpose
+		/*164*/
+	};
+
+	struct LootingItem_Struct {
+		/*000*/	uint32	lootee;			// Entity ID of corpse being looted
+		/*004*/	uint32	looter;			// Entity ID of player looting
+		/*008*/	uint16	slot_id;		// Corpse slot being looted
+		/*010*/	uint16	unknown10;		// Padding (slot_id is probably uint32)
+		/*012*/	int32	auto_loot;		// Auto-loot flag
+		/*016*/	uint32	unknown16;		// Laurion's Song added field
+		/*020*/
+	};
 #pragma pack()
 
 	};	//end namespace structs

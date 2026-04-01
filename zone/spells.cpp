@@ -1854,7 +1854,9 @@ void Mob::CastedSpellFinished(uint16 spell_id, uint32 target_id, CastingSlot slo
 				c->SetLinkedSpellReuseTimer(spells[spell_id].timer_id, (spells[spell_id].recast_time / 1000) - (casting_spell_recast_adjust / 1000));
 			}
 
-			c->MemorizeSpell(static_cast<uint32>(slot), spell_id, memSpellSpellbar, casting_spell_recast_adjust);
+			// Laurion's Song doesn't need MemorizeSpell packet after casting
+			// SendSpellBarEnable (OP_ManaChange) is sufficient to unlock the gem
+			// Sending any MemorizeSpell packet causes unwanted side effects (opens spellbook or clears gem)
 
 			// this tells the client that casting may happen again
 			SetMana(GetMana());

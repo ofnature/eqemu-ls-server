@@ -5771,7 +5771,7 @@ CREATE INDEX idx_character_expires ON data_buckets (character_id, expires);
 CREATE INDEX idx_npc_expires ON data_buckets (npc_id, expires);
 CREATE INDEX idx_bot_expires ON data_buckets (bot_id, expires);
 )"
-	}
+	},
 // -- template; copy/paste this when you need to create a new entry
 //	ManifestEntry{
 //		.version = 9228,
@@ -5782,6 +5782,35 @@ CREATE INDEX idx_bot_expires ON data_buckets (bot_id, expires);
 //		.sql = R"(
 //
 //)"
+
+	// Dragon's Hoard (Laurion's Song) — account-based storage, 200 slots
+	ManifestEntry{
+		.version = 9286,
+		.description = "dragonhoard_items_table",
+		.check = "SHOW TABLES LIKE 'dragonhoard_items'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+CREATE TABLE IF NOT EXISTS `dragonhoard_items` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `account_id` INT UNSIGNED NOT NULL,
+  `slot_id` INT UNSIGNED NOT NULL,
+  `item_id` INT UNSIGNED NOT NULL,
+  `charges` SMALLINT NOT NULL DEFAULT 0,
+  `serial` BIGINT UNSIGNED NOT NULL,
+  `augslot1` INT UNSIGNED NOT NULL DEFAULT 0,
+  `augslot2` INT UNSIGNED NOT NULL DEFAULT 0,
+  `augslot3` INT UNSIGNED NOT NULL DEFAULT 0,
+  `augslot4` INT UNSIGNED NOT NULL DEFAULT 0,
+  `augslot5` INT UNSIGNED NOT NULL DEFAULT 0,
+  `augslot6` INT UNSIGNED NOT NULL DEFAULT 0,
+  `custom_data` TEXT,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `account_slot` (`account_id`, `slot_id`),
+  KEY `account_serial` (`account_id`, `serial`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+)",
+	},
 
 	// Used for testing
 //	ManifestEntry{
