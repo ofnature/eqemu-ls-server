@@ -4952,8 +4952,9 @@ namespace Laurion
 		size_t buffer_start_pos = buffer.size();
 
 		// Only Dragon's Hoard (5000-5199) uses client-aligned 59-byte header; all other items use original layout.
-		// Non-DH: original 16-char ASCII decimal string (e.g. "0000000000000058"). DH: 16-byte binary GUID (serial in low 8 bytes LE).
-		auto item_guid = fmt::format("{:016}", inst->GetSerialNumber());
+		// Non-DH: 16-char ASCII decimal + NUL. DH: [DH_GUID_15CHAR] 15-char + NUL = 16 bytes (client min(strlen+1,16)).
+		// auto item_guid = is_dragon_hoard ? fmt::format("{:015}", inst->GetSerialNumber()) : fmt::format("{:016}", inst->GetSerialNumber());  // [DH_GUID_TEST] temporarily replaced by fixed DH GUID below
+		auto item_guid = is_dragon_hoard ? std::string("000000000000000") : fmt::format("{:016}", inst->GetSerialNumber());  // [DH_GUID_TEST] temporary: all DH items use 15 zero digits (not GetSerialNumber)
 
 		structs::InventorySlot_Struct slot_id{};
 		switch (packet_type) {
@@ -5002,7 +5003,12 @@ namespace Laurion
 					guid_binary[i] |= 0x01;
 			}
 			guid_binary[15] = 0x00;
-			buffer.WriteBytes(guid_binary, 16);
+			// buffer.WriteBytes(guid_binary, 16);  // [DH_GUID_FIX] replaced: DH now uses same GUID encoding as non-DH (decimal string + NUL).
+			// [DH_GUID_FIX] Zero-padded decimal serial; DH width {:015} + WriteString, non-DH {:016} (see item_guid init).
+			// buffer.WriteString(item_guid);  // [DH_GUID_NOBYTES] sub_140242710 advances by min(strlen+1, 16)=16; trailing NUL would be left unconsumed and misalign the stream.
+			// [DH_GUID_NOBYTES] Write exactly 16 bytes (no NUL) to match client GUID read.
+			// buffer.WriteBytes(item_guid.c_str(), 16);  // [DH_GUID_NOBYTES] commented out — [DH_GUID_15CHAR] uses 15-char string + NUL = 16 bytes via WriteString
+			buffer.WriteString(item_guid);  // [DH_GUID_15CHAR] 15 chars + NUL = 16 bytes; client consumes min(strlen+1,16) without stray byte
 			// --- ALL post-GUID writes before blob (commented out — replaced by sub_14029dc10 layout below) ---
 			// Post-GUID: client sub_14029dc10 reads uint32, uint32, uint16, uint16, uint16, uint64, uint32, uint32, uint64 (then MerchantSlot at item+0xf0).
 			// int16_t slot_field = inst->GetMerchantSlot() ? inst->GetMerchantSlot() : (slot_id.Slot + 1);
@@ -5052,6 +5058,10 @@ namespace Laurion
 			// GlobalIndex written here via sub_1405647b0 equivalent (existing — keep as-is)
 			buffer.WriteUInt32(6);
 			buffer.WriteUInt16(static_cast<uint16_t>(5000 + slot_id.Slot));
+			buffer.WriteUInt16(0xFFFF);
+			buffer.WriteUInt16(0xFFFF);
+			// [DH_GLOBALINDEX_FIX] Second triple of uint16s: complete 6-element slot array sub_14029DC10 reads after GlobalIndex header.
+			buffer.WriteUInt16(0xFFFF);
 			buffer.WriteUInt16(0xFFFF);
 			buffer.WriteUInt16(0xFFFF);
 			buffer.WriteUInt32((uint32_t)item->Icon);   // item+0x74 = IconNumber
