@@ -4362,46 +4362,143 @@ namespace Laurion
 		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(static_cast<int32_t>(item->Deity));
 
 		// [DH_BLOB_REORDER] Field order matches client sub_14065BD70 read sequence (ItemData: CR=SvCold, DR=SvDisease, PR=SvPoison, MR=SvMagic, FR=SvFire).
-		// buffer.WriteUInt8(static_cast<uint8_t>(item->ItemClass));  // [DH_BLOB_REORDER] 1 [rdi+0xE9] ItemClass — [DH_ITEMCLASS_TEST] superseded below
-		buffer.WriteUInt8(0);  // [DH_ITEMCLASS_TEST] temporary: force ItemClass 0 for name/UI experiment
+		buffer.WriteUInt8(static_cast<uint8_t>(item->ItemClass));  // [DH_BLOB_REORDER] 1 [rdi+0xE9] ItemClass — [DH_BLOB_FIELD_FIX] restored; [DH_ITEMCLASS_TEST] commented below
+		// buffer.WriteUInt8(0);  // [DH_ITEMCLASS_TEST] temporary: force ItemClass 0 for name/UI experiment — [DH_BLOB_FIELD_FIX] commented out (real ItemClass active above)
 		buffer.WriteBytes(item->Name, strlen(item->Name) + 1);      // [DH_BLOB_REORDER] 2 [rdi+0x00] Name varlen NUL
 		buffer.WriteBytes(item->Lore, strlen(item->Lore) + 1);     // [DH_BLOB_REORDER] 3 [rdi+0x40] Lore varlen NUL
 		buffer.WriteInt32(ExtractIDFile(item->IDFile));            // [DH_BLOB_REORDER] 4 [rdi+0xB0] IDFile
 		buffer.WriteInt32(0);                                       // [DH_BLOB_REORDER] 5 [rdi+0xB4] IDFile2
 		buffer.WriteInt32(static_cast<int32_t>(item->ID));          // [DH_BLOB_REORDER] 6 [rdi+0xB8] ItemNumber
-		buffer.WriteInt32(static_cast<int32_t>(item->Weight));      // [DH_BLOB_REORDER] 7 [rdi+0xCC] Weight
-		buffer.WriteUInt8(item->NoRent);                            // [DH_BLOB_REORDER] 8 [rdi+0xD0] NoRent
-		buffer.WriteUInt8(item->NoDrop);                            // [DH_BLOB_REORDER] 9 [rdi+0xD1] NoDrop
-		buffer.WriteUInt8(static_cast<uint8_t>(item->Attuneable ? 1u : 0u));  // [DH_BLOB_REORDER] 10 [rdi+0xD2] Attuneable
-		buffer.WriteUInt8(static_cast<uint8_t>(item->Size));       // [DH_BLOB_REORDER] 11 [rdi+0xE8] Size
-		buffer.WriteInt32(static_cast<int32_t>(item->Slots));       // [DH_BLOB_REORDER] 12 [rdi+0xBC] EquipSlots
-		buffer.WriteInt32(0);                                       // [DH_BLOB_REORDER] 13 [rdi+0xC0] Cost = 0 (avoid bogus item ptr)
-		buffer.WriteInt32(item->Icon);                              // [DH_BLOB_REORDER] 14 [rdi+0xC4] IconNumber
-		buffer.WriteUInt8(0);                                       // [DH_BLOB_REORDER] 15 [rdi+0xC8] eGMRequirement
-		buffer.WriteUInt8(0);                                       // [DH_BLOB_REORDER] 16 [rdi+0xEA] unknown
-		buffer.WriteUInt8(static_cast<uint8_t>(item->CR));          // [DH_BLOB_REORDER] 17 [rdi+0xF5] SvCold (ItemData::CR)
-		buffer.WriteUInt8(static_cast<uint8_t>(item->DR));          // [DH_BLOB_REORDER] 18 [rdi+0xF8] SvDisease (ItemData::DR)
-		buffer.WriteUInt8(static_cast<uint8_t>(item->PR));          // [DH_BLOB_REORDER] 19 [rdi+0xF9] SvPoison (ItemData::PR)
-		buffer.WriteUInt8(static_cast<uint8_t>(item->MR));          // [DH_BLOB_REORDER] 20 [rdi+0xF7] SvMagic (ItemData::MR)
-		buffer.WriteUInt8(static_cast<uint8_t>(item->FR));          // [DH_BLOB_REORDER] 21 [rdi+0xF6] SvFire (ItemData::FR)
-		buffer.WriteUInt8(static_cast<uint8_t>(item->SVCorruption)); // [DH_BLOB_REORDER] 22 [rdi+0xFA] SvCorruption
-		buffer.WriteUInt8(static_cast<uint8_t>(item->AStr));        // [DH_BLOB_REORDER] 23 [rdi+0xFB]
-		buffer.WriteUInt8(static_cast<uint8_t>(item->ASta));        // [DH_BLOB_REORDER] 24 [rdi+0xFC]
-		buffer.WriteUInt8(static_cast<uint8_t>(item->AAgi));        // [DH_BLOB_REORDER] 25 [rdi+0xFD]
-		buffer.WriteUInt8(static_cast<uint8_t>(item->ADex));        // [DH_BLOB_REORDER] 26 [rdi+0xFE]
-		buffer.WriteUInt8(static_cast<uint8_t>(item->ACha));        // [DH_BLOB_REORDER] 27 [rdi+0xFF]
-		buffer.WriteUInt8(static_cast<uint8_t>(item->AInt));        // [DH_BLOB_REORDER] 28 [rdi+0x100]
-		buffer.WriteUInt8(static_cast<uint8_t>(item->AWis));        // [DH_BLOB_REORDER] 29 [rdi+0x101]
-		buffer.WriteInt32(item->HP);                                // [DH_BLOB_REORDER] 30 [rdi+0x104]
-		buffer.WriteInt32(item->Mana);                              // [DH_BLOB_REORDER] 31 [rdi+0x108]
-		buffer.WriteInt32(0);                                       // [DH_BLOB_REORDER] 32 [rdi+0x56C] unknown
-		buffer.WriteInt32(item->AC);                                // [DH_BLOB_REORDER] 33 [rdi+0x10C]
-		buffer.WriteInt32(0);                                       // [DH_BLOB_REORDER] 34 [rdi+0x574] unknown
-		buffer.WriteInt32(0);                                       // [DH_BLOB_REORDER] 35 [rdi+0x578] unknown
-		buffer.WriteInt32(0);                                       // [DH_BLOB_REORDER] 36 [rdi+0x57C] unknown
-		buffer.WriteInt32(static_cast<int32_t>(item->Classes));     // [DH_BLOB_REORDER] 37 [rdi+0x140]
-		buffer.WriteInt32(static_cast<int32_t>(item->Races));       // [DH_BLOB_REORDER] 38 [rdi+0x144]
-		buffer.WriteInt32(static_cast<int32_t>(item->Deity));       // [DH_BLOB_REORDER] 39 [rdi+0x148]
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteInt32(static_cast<int32_t>(item->Weight));      // [DH_BLOB_REORDER] 7 [rdi+0xCC] Weight
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteUInt8(item->NoRent);                            // 8 [rdi+0xD0] NoRent
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteUInt8(item->NoDrop);                            // 9 [rdi+0xD1] NoDrop
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteUInt8(static_cast<uint8_t>(item->Attuneable ? 1u : 0u));  // 10 [rdi+0xD2] Attuneable
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteUInt8(static_cast<uint8_t>(item->Size));       // 11 [rdi+0xE8] Size
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteInt32(static_cast<int32_t>(item->Slots));       // 12 [rdi+0xBC] EquipSlots
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteInt32(0);                                       // 13 [rdi+0xC0] Cost
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteInt32(item->Icon);                              // 14 [rdi+0xC4] IconNumber
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteUInt8(0);                                       // 15 [rdi+0xC8] eGMRequirement
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteUInt8(0);                                       // 16 [rdi+0xEA] unknown
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteUInt8(static_cast<uint8_t>(item->CR));          // 17 [rdi+0xF5] SvCold
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteUInt8(static_cast<uint8_t>(item->DR));          // 18 [rdi+0xF8] SvDisease
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteUInt8(static_cast<uint8_t>(item->PR));          // 19 [rdi+0xF9] SvPoison
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteUInt8(static_cast<uint8_t>(item->MR));          // 20 [rdi+0xF7] SvMagic
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteUInt8(static_cast<uint8_t>(item->FR));          // 21 [rdi+0xF6] SvFire
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteUInt8(static_cast<uint8_t>(item->SVCorruption)); // 22 [rdi+0xFA] SvCorruption
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteUInt8(static_cast<uint8_t>(item->AStr));        // 23 [rdi+0xFB]
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteUInt8(static_cast<uint8_t>(item->ASta));        // 24 [rdi+0xFC]
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteUInt8(static_cast<uint8_t>(item->AAgi));        // 25 [rdi+0xFD]
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteUInt8(static_cast<uint8_t>(item->ADex));        // 26 [rdi+0xFE]
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteUInt8(static_cast<uint8_t>(item->ACha));        // 27 [rdi+0xFF]
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteUInt8(static_cast<uint8_t>(item->AInt));        // 28 [rdi+0x100]
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteUInt8(static_cast<uint8_t>(item->AWis));        // 29 [rdi+0x101]
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteInt32(item->HP);                                // 30 [rdi+0x104]
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteInt32(item->Mana);                              // 31 [rdi+0x108]
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteInt32(0);                                       // 32 [rdi+0x56C] was unknown — [DH_BLOB_FIELD_FIX] active line uses item->Endur
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteInt32(item->AC);                                // 33 [rdi+0x10C]
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteInt32(0);                                       // 34 [rdi+0x574] was unknown — [DH_BLOB_FIELD_FIX] active line uses item->Regen
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteInt32(0);                                       // 35 [rdi+0x578] was unknown — [DH_BLOB_FIELD_FIX] active line uses item->ManaRegen
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteInt32(0);                                       // 36 [rdi+0x57C] was unknown — [DH_BLOB_FIELD_FIX] active line uses item->EnduranceRegen
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteInt32(static_cast<int32_t>(item->Classes));     // 37 [rdi+0x140]
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteInt32(static_cast<int32_t>(item->Races));       // 38 [rdi+0x144]
+		// [DH_BLOB_STAT_TEST_OLD] buffer.WriteInt32(static_cast<int32_t>(item->Deity));       // 39 [rdi+0x148]
+		buffer.WriteInt32(static_cast<int32_t>(item->Weight));      // [DH_BLOB_REORDER] 7 [rdi+0xCC] Weight — restored after [DH_BLOB_STAT_TEST] revert
+		buffer.WriteUInt8(item->NoRent);                            // 8 [rdi+0xD0] NoRent
+		buffer.WriteUInt8(item->NoDrop);                            // 9 [rdi+0xD1] NoDrop
+		buffer.WriteUInt8(static_cast<uint8_t>(item->Attuneable ? 1u : 0u));  // 10 [rdi+0xD2] Attuneable
+		buffer.WriteUInt8(static_cast<uint8_t>(item->Size));       // 11 [rdi+0xE8] Size
+		buffer.WriteInt32(static_cast<int32_t>(item->Slots));       // 12 [rdi+0xBC] EquipSlots
+		buffer.WriteInt32(0);                                       // 13 [rdi+0xC0] Cost (keep 0 per [DH_BLOB_FIELD_FIX])
+		buffer.WriteInt32(item->Icon);                              // 14 [rdi+0xC4] IconNumber
+		buffer.WriteUInt8(0);                                       // 15 [rdi+0xC8] eGMRequirement
+		buffer.WriteUInt8(0);                                       // 16 [rdi+0xEA] unknown
+		buffer.WriteUInt8(static_cast<uint8_t>(item->CR));          // 17 [rdi+0xF5] SvCold
+		buffer.WriteUInt8(static_cast<uint8_t>(item->DR));          // 18 [rdi+0xF8] SvDisease
+		buffer.WriteUInt8(static_cast<uint8_t>(item->PR));          // 19 [rdi+0xF9] SvPoison
+		buffer.WriteUInt8(static_cast<uint8_t>(item->MR));          // 20 [rdi+0xF7] SvMagic
+		buffer.WriteUInt8(static_cast<uint8_t>(item->FR));          // 21 [rdi+0xF6] SvFire
+		buffer.WriteUInt8(static_cast<uint8_t>(item->SVCorruption)); // 22 [rdi+0xFA] SvCorruption
+		buffer.WriteUInt8(static_cast<uint8_t>(item->AStr));        // 23 [rdi+0xFB]
+		buffer.WriteUInt8(static_cast<uint8_t>(item->ASta));        // 24 [rdi+0xFC]
+		buffer.WriteUInt8(static_cast<uint8_t>(item->AAgi));        // 25 [rdi+0xFD]
+		buffer.WriteUInt8(static_cast<uint8_t>(item->ADex));        // 26 [rdi+0xFE]
+		buffer.WriteUInt8(static_cast<uint8_t>(item->ACha));        // 27 [rdi+0xFF]
+		buffer.WriteUInt8(static_cast<uint8_t>(item->AInt));        // 28 [rdi+0x100]
+		buffer.WriteUInt8(static_cast<uint8_t>(item->AWis));        // 29 [rdi+0x101]
+		buffer.WriteInt32(item->HP);                                // 30 [rdi+0x104]
+		buffer.WriteInt32(item->Mana);                              // 31 [rdi+0x108]
+		buffer.WriteInt32(item->Endur);                             // 32 [rdi+0x56C] Endurance — [DH_BLOB_FIELD_FIX]
+		buffer.WriteInt32(item->AC);                                // 33 [rdi+0x10C]
+		buffer.WriteInt32(item->Regen);                            // 34 [rdi+0x574] HP regen — [DH_BLOB_FIELD_FIX]
+		buffer.WriteInt32(item->ManaRegen);                         // 35 [rdi+0x578] Mana regen — [DH_BLOB_FIELD_FIX]
+		buffer.WriteInt32(item->EnduranceRegen);                    // 36 [rdi+0x57C] Endurance regen — [DH_BLOB_FIELD_FIX]
+		buffer.WriteInt32(static_cast<int32_t>(item->Classes));     // 37 [rdi+0x140]
+		buffer.WriteInt32(static_cast<int32_t>(item->Races));       // 38 [rdi+0x144]
+		buffer.WriteInt32(static_cast<int32_t>(item->Deity));       // 39 [rdi+0x148]
+		// [DH_BLOB_EXTENDED] Fields after Deity through evolving max level slot (zeros where unknown / not used).
+		buffer.WriteInt32(static_cast<int32_t>(item->Damage));     // [DH_BLOB_EXTENDED] [rdi+0x11C] DMG
+		buffer.WriteInt32(static_cast<int32_t>(item->Delay));       // [DH_BLOB_EXTENDED] [rdi+0x120] Delay
+		buffer.WriteInt32(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x118]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x124]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x128]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x12C]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x134]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x130]
+		buffer.WriteUInt8(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x150]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x538]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x110]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x114]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x138]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x13C]
+		buffer.WriteUInt8(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x151]
+		buffer.WriteUInt8(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x152]
+		buffer.WriteUInt8(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x153]
+		buffer.WriteUInt8(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x154]
+		buffer.WriteUInt8(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x155]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x158]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x14C]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x18C]
+		buffer.WriteUInt8(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x190]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x194]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x19C]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x198]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x1A0]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x1A4]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_EXTENDED] [rdi+0x21C] evolving max level = 0
+		// [DH_BLOB_STAT_TEST] reverted — sequential 1..33 test writes preserved below (do not delete)
+		// [DH_BLOB_STAT_TEST] buffer.WriteInt32(1);    // step 7 Weight
+		// [DH_BLOB_STAT_TEST] buffer.WriteUInt8(2);    // 8 NoRent
+		// [DH_BLOB_STAT_TEST] buffer.WriteUInt8(3);    // 9 NoDrop
+		// [DH_BLOB_STAT_TEST] buffer.WriteUInt8(4);    // 10 Attuneable
+		// [DH_BLOB_STAT_TEST] buffer.WriteUInt8(5);    // 11 Size
+		// [DH_BLOB_STAT_TEST] buffer.WriteInt32(6);    // 12 Slots
+		// [DH_BLOB_STAT_TEST] buffer.WriteInt32(7);    // 13 Cost
+		// [DH_BLOB_STAT_TEST] buffer.WriteInt32(8);    // 14 Icon
+		// [DH_BLOB_STAT_TEST] buffer.WriteUInt8(9);    // 15 eGMRequirement
+		// [DH_BLOB_STAT_TEST] buffer.WriteUInt8(10);   // 16 unknown
+		// [DH_BLOB_STAT_TEST] buffer.WriteUInt8(11);   // 17 CR
+		// [DH_BLOB_STAT_TEST] buffer.WriteUInt8(12);   // 18 DR
+		// [DH_BLOB_STAT_TEST] buffer.WriteUInt8(13);   // 19 PR
+		// [DH_BLOB_STAT_TEST] buffer.WriteUInt8(14);   // 20 MR
+		// [DH_BLOB_STAT_TEST] buffer.WriteUInt8(15);   // 21 FR
+		// [DH_BLOB_STAT_TEST] buffer.WriteUInt8(16);   // 22 SVCorruption
+		// [DH_BLOB_STAT_TEST] buffer.WriteUInt8(17);   // 23 AStr
+		// [DH_BLOB_STAT_TEST] buffer.WriteUInt8(18);   // 24 ASta
+		// [DH_BLOB_STAT_TEST] buffer.WriteUInt8(19);   // 25 AAgi
+		// [DH_BLOB_STAT_TEST] buffer.WriteUInt8(20);   // 26 ADex
+		// [DH_BLOB_STAT_TEST] buffer.WriteUInt8(21);   // 27 ACha
+		// [DH_BLOB_STAT_TEST] buffer.WriteUInt8(22);   // 28 AInt
+		// [DH_BLOB_STAT_TEST] buffer.WriteUInt8(23);   // 29 AWis
+		// [DH_BLOB_STAT_TEST] buffer.WriteInt32(24);   // 30 HP
+		// [DH_BLOB_STAT_TEST] buffer.WriteInt32(25);   // 31 Mana
+		// [DH_BLOB_STAT_TEST] buffer.WriteInt32(26);   // 32 unknown @0x56C
+		// [DH_BLOB_STAT_TEST] buffer.WriteInt32(27);   // 33 AC
+		// [DH_BLOB_STAT_TEST] buffer.WriteInt32(28);   // 34 unknown @0x574
+		// [DH_BLOB_STAT_TEST] buffer.WriteInt32(29);   // 35 unknown @0x578
+		// [DH_BLOB_STAT_TEST] buffer.WriteInt32(30);   // 36 unknown @0x57C
+		// [DH_BLOB_STAT_TEST] buffer.WriteInt32(31);   // 37 Classes
+		// [DH_BLOB_STAT_TEST] buffer.WriteInt32(32);   // 38 Races
+		// [DH_BLOB_STAT_TEST] buffer.WriteInt32(33);   // 39 Deity
 
 		const size_t pos = buffer.size();
 		if (pos < LAURION_BLOB_TOTAL_SIZE) {

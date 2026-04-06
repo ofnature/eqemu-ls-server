@@ -17566,6 +17566,22 @@ void Client::Handle_OP_AABuy(const EQApplicationPacket *app)
 // ----------------------------------------------------------------------------
 void Client::Handle_OP_DragonsHoard(const EQApplicationPacket *app)
 {
+	// [DH_RETRIEVE_DEBUG]
+	if (app) {
+		LogError("[DH_RETRIEVE_DEBUG] Handle_OP_DragonsHoard called, len=%u", app->size);
+		if (app->size >= 4 && app->pBuffer) {
+			uint32 first_dword = *(uint32 *)app->pBuffer;
+			LogError("[DH_RETRIEVE_DEBUG] first_dword=0x%08x", first_dword);
+		}
+		// [DH_RETRIEVE_DEBUG_HEX]
+		if (app->size > 0 && app->pBuffer) {
+			char hexbuf[256] = {};
+			int pos = 0;
+			for (uint32 i = 0; i < app->size && i < 32 && pos < 240; ++i)
+				pos += snprintf(hexbuf + pos, sizeof(hexbuf) - pos, "%02x ", ((uint8 *)app->pBuffer)[i]);
+			LogError("[DH_RETRIEVE_DEBUG_HEX] packet bytes: %s", hexbuf);
+		}
+	}
 	// [DH_LOG_CLEANUP] Per-packet DH raw / LogInfo / INCOMING HEX spam disabled.
 	// [DH_RAW_LOG] Log every incoming 0x6D0F before any other work; action = first 4 bytes (partial packets zero-pad high bytes).
 	// uint32 dh_raw_action = 0;
@@ -17888,6 +17904,18 @@ void Client::Handle_OP_DragonsHoard(const EQApplicationPacket *app)
 			// Log(Logs::General, Logs::Error, "[DRAGONSHOARD] action=3 retrieve: sending action=0 response item_count=%u", new_count);
 			QueuePacket(outapp);
 			safe_delete(outapp);
+			// [DH_RETRIEVE_REFRESH] After withdraw action=0 ack, mirror [DH_DEPOSIT_FIX_FULL_SEQUENCE] (list + action=2).
+			if (Connected()) {
+				// [DH_RETRIEVE_REFRESH]
+				SendDragonHoardItemList();
+				auto outapp_slots = new EQApplicationPacket(OP_DragonsHoard, sizeof(DragonsHoard_SlotCount_Struct));
+				DragonsHoard_SlotCount_Struct* slots = (DragonsHoard_SlotCount_Struct*)outapp_slots->pBuffer;
+				memset(slots, 0, sizeof(DragonsHoard_SlotCount_Struct));
+				slots->action = 2;
+				slots->max_slots = 200;
+				QueuePacket(outapp_slots);
+				safe_delete(outapp_slots);
+			}
 			// [DH_TXT_ROOT_AUDIT] Trial resync after withdraw (commented — do not delete):
 			// if (Connected()) {
 			// 	SendDragonHoardItemList();
@@ -17981,26 +18009,39 @@ void Client::Handle_OP_DragonsHoard(const EQApplicationPacket *app)
 				break;
 			}
 			Log(Logs::General, Logs::Error, "[DRAGONSHOARD] deposit: saved to dragonhoard_items slot %d", dh_slot);
-			uint32 move_stack = (inst->IsStackable() && inst->GetCharges() > 0) ? static_cast<uint32>(inst->GetCharges()) : 0;
-			DeleteItemInInventory(found_slot, 0, false, true);  // [DH_MOVEIT_RESTORE] client_update=false — no OP_DeleteItem from DeleteItemInInventory; OP_MoveItem below syncs client
+			// [DH_DEPOSIT_FIX_NO_MOVEITEM] [DH_DEPOSIT_FIX] OP_MoveItem deposit echo disabled — code kept below (commented).
+			// uint32 move_stack = (inst->IsStackable() && inst->GetCharges() > 0) ? static_cast<uint32>(inst->GetCharges()) : 0;
+			DeleteItemInInventory(found_slot, 0, false, true);  // [DH_MOVEIT_RESTORE] client_update=false — no OP_DeleteItem from DeleteItemInInventory; OP_MoveItem below syncs client [DH_DEPOSIT_FIX] (MoveItem echo commented — sync via action=0 + SendDragonHoardItemList + action=2).
 			Log(Logs::General, Logs::Error, "[DRAGONSHOARD] deposit: removed from inv slot %d", found_slot);
+			// [DH_DEPOSIT_CURSOR_CLEAR] OP_MoveItem: source slot -> invalid dest clears cursor (item consumed from client view until DH list refresh).
+			{
+				auto move_cursor_clear = new EQApplicationPacket(OP_MoveItem, sizeof(MoveItem_Struct));
+				MoveItem_Struct* mic = (MoveItem_Struct*)move_cursor_clear->pBuffer;
+				memset(mic, 0, sizeof(MoveItem_Struct));
+				mic->from_slot = static_cast<uint32>(found_slot);
+				mic->to_slot = 0xFFFFFFFFu;
+				mic->number_in_stack = 0;
+				QueuePacket(move_cursor_clear);
+				safe_delete(move_cursor_clear);
+			}
 			// [DH_CASE4_NO_ECHO] OP_MoveItem deposit echo disabled. [DH_NO_REFRESH_ON_DEPOSIT] List refresh after action=0 commented out — client gets action=0 + item_count only.
 			// Confirm move so client stays in sync (from_slot -> DH slot 5000..5199)
 			// [DH_MOVEIT_RESTORE] Restored OP_MoveItem echo (supersedes [DH_CASE4_NO_ECHO] disable above for active path); from_slot=found_slot, to_slot=5000+dh_slot, number_in_stack=move_stack.
-			const uint32 dh_client_slot = 5000 + static_cast<uint32>(dh_slot);
-			auto move_confirm = new EQApplicationPacket(OP_MoveItem, sizeof(MoveItem_Struct));
-			MoveItem_Struct* move_out = (MoveItem_Struct*)move_confirm->pBuffer;
-			move_out->from_slot = found_slot;
-			move_out->to_slot = dh_client_slot;
-			move_out->number_in_stack = move_stack;
+			// [DH_DEPOSIT_FIX_NO_MOVEITEM] const uint32 dh_client_slot = 5000 + static_cast<uint32>(dh_slot);
+			// [DH_DEPOSIT_FIX_NO_MOVEITEM] auto move_confirm = new EQApplicationPacket(OP_MoveItem, sizeof(MoveItem_Struct));
+			// [DH_DEPOSIT_FIX_NO_MOVEITEM] MoveItem_Struct* move_out = (MoveItem_Struct*)move_confirm->pBuffer;
+			// [DH_DEPOSIT_FIX_NO_MOVEITEM] move_out->from_slot = found_slot;
+			// [DH_DEPOSIT_FIX_NO_MOVEITEM] move_out->to_slot = dh_client_slot;
+			// [DH_DEPOSIT_FIX_NO_MOVEITEM] move_out->number_in_stack = move_stack;
 			// [DH_LOG_CLEANUP] Per-deposit MoveItem send line disabled.
 			// [DH_MOVEIT_LOG] Log packet fields as sent (fmt uses [{}]; same values as from_slot=%u to_slot=%u stack=%u dh_client_slot=%u).
 			// LogError("[DH_MOVEIT_LOG] [DH_MOVEIT_SEND] from_slot=[{}] to_slot=[{}] stack=[{}] dh_client_slot=[{}]",
 			// 	move_out->from_slot, move_out->to_slot, move_out->number_in_stack, dh_client_slot);
-			QueuePacket(move_confirm);
-			safe_delete(move_confirm);
+			// [DH_DEPOSIT_FIX_NO_MOVEITEM] QueuePacket(move_confirm);
+			// [DH_DEPOSIT_FIX_NO_MOVEITEM] safe_delete(move_confirm);
 			// [DH_CURSOR_BUFFER] After DH deposit OP_MoveItem, resync cursor buffer (see zone/inventory.cpp SendCursorBuffer / ItemPacketDragonHoard for Laurion).
-			SendCursorBuffer();
+			// [DH_DEPOSIT_FIX_NO_CURSOR] [DH_DEPOSIT_FIX] SendCursorBuffer() disabled — code kept below (commented).
+			// SendCursorBuffer();
 
 			// [DH_CURSOR_CLEAR] DeleteItemInInventory(..., client_update=false) sends no client delete; mirror inventory.cpp OP_DeleteItem pattern so cursor clears after cursor deposit.
 			// if (found_slot == EQ::invslot::slotCursor && IsValidSlot(EQ::invslot::slotCursor)) {
@@ -18039,6 +18080,18 @@ void Client::Handle_OP_DragonsHoard(const EQApplicationPacket *app)
 			Log(Logs::General, Logs::Error, "[DRAGONSHOARD] deposit: sending action=0 response item_count=%u", new_count);
 			QueuePacket(outapp);
 			safe_delete(outapp);
+			// [DH_DEPOSIT_FIX] After action=0 ack, mirror case 0 [DH_FULL_SEQUENCE] (list + action=2).
+			if (Connected()) {
+				// [DH_DEPOSIT_FIX_FULL_SEQUENCE]
+				SendDragonHoardItemList();
+				auto outapp_slots = new EQApplicationPacket(OP_DragonsHoard, sizeof(DragonsHoard_SlotCount_Struct));
+				DragonsHoard_SlotCount_Struct* slots = (DragonsHoard_SlotCount_Struct*)outapp_slots->pBuffer;
+				memset(slots, 0, sizeof(DragonsHoard_SlotCount_Struct));
+				slots->action = 2;
+				slots->max_slots = 200;
+				QueuePacket(outapp_slots);
+				safe_delete(outapp_slots);
+			}
 			// [DH_NO_REFRESH_ON_DEPOSIT] SendDragonHoardItemList() after deposit disabled — rely on action=0 response with updated item_count only.
 			// [DH_CASE4_NO_ECHO] Repopulate DH window after deposit (MoveItem echo commented out above).
 			// if (Connected()) {
