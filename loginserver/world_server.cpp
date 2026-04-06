@@ -1029,7 +1029,7 @@ void WorldServer::SerializeForClientServerListLaurion(class SerializeBuffer& out
 	}
 
 	out.WriteUInt32(9000);
-	out.WriteUInt32(0);
+	// out.WriteUInt32(0);  // [LS_SERVERLIST_FIX] commented out — Laurion list originally only had port uint32 (9000) after address string; second dword misaligned client.
 
 	uint32_t flags = 32; //all servers i saw had this set
 	switch (GetServerListID()) {
@@ -1045,10 +1045,13 @@ void WorldServer::SerializeForClientServerListLaurion(class SerializeBuffer& out
 	}
 
 	out.WriteUInt32(flags);
+	out.WriteUInt32(1);  // [LS_SERVERLIST_FIX2] original Laurion list dword before server id
 	out.WriteUInt32(GetServerId());
 	out.WriteString(GetServerLongName());
-	out.WriteString("EN");
-	out.WriteString("US");
+	// out.WriteString("EN");  // [LS_SERVERLIST_FIX2] superseded: lowercase us/en, country before language
+	// out.WriteString("US");
+	out.WriteString("us");
+	out.WriteString("en");
 
 	if (GetStatus() < 0) {
 		if (GetZonesBooted() == 0) {

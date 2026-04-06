@@ -4266,6 +4266,7 @@ namespace Laurion
 
 	// [DH_BLOB_REWRITE] Numeric tail from IDFile onward matches mq2-laurion ItemDefinition order (0x0b0–0x14b), then pad to LAURION_BLOB_TOTAL_SIZE.
 	// [DH_BLOB_VARLEN] Name/Lore are variable-length NUL-terminated strings (not fixed Name[64]/LoreName[80]/AdvancedLoreName[32]).
+	// [DH_BLOB_REORDER] Active body follows sub_14065BD70 read order; previous mq2-style order preserved as // [DH_BLOB_OLD_ORDER] lines.
 	// 0x0ec Lore int32 uses ItemData::LoreGroup (MQ2 ItemDefinition::Lore). [DH_SYNTHETIC_ID_V2] remains only in legacy #if 0 above.
 	static void SerializeItemDefinitionLaurionBlob(SerializeBuffer& buffer, const EQ::ItemData* item) {
 		// [DH_BLOB_VARLEN] Fixed-size ItemDefinition-style prefix (do not delete):
@@ -4286,79 +4287,121 @@ namespace Laurion
 		// char advanced_lore[32]{};
 		// buffer.WriteBytes(advanced_lore, sizeof(advanced_lore));
 
-		buffer.WriteBytes(item->Name, strlen(item->Name) + 1);
-		buffer.WriteBytes(item->Lore, strlen(item->Lore) + 1);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteBytes(item->Name, strlen(item->Name) + 1);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteBytes(item->Lore, strlen(item->Lore) + 1);
+		//
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(ExtractIDFile(item->IDFile));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(static_cast<int32_t>(item->ID));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(static_cast<int32_t>(item->Slots));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(static_cast<int32_t>(item->Price));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(item->Icon);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(item->Weight);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(item->NoRent);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(item->NoDrop);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(item->Attuneable);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(item->Size);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(item->ItemClass);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(item->Tradeskills ? 1u : 0u);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(item->LoreGroup);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(static_cast<uint8_t>(item->CR));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(static_cast<uint8_t>(item->FR));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(static_cast<uint8_t>(item->MR));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(static_cast<uint8_t>(item->DR));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(static_cast<uint8_t>(item->PR));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(static_cast<uint8_t>(item->SVCorruption));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(static_cast<uint8_t>(item->AStr));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(static_cast<uint8_t>(item->ASta));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(static_cast<uint8_t>(item->AAgi));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(static_cast<uint8_t>(item->ADex));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(static_cast<uint8_t>(item->ACha));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(static_cast<uint8_t>(item->AInt));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(static_cast<uint8_t>(item->AWis));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteUInt8(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(item->HP);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(item->Mana);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(item->AC);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(static_cast<int32_t>(item->ReqLevel));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(static_cast<int32_t>(item->RecLevel));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(0);
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(static_cast<int32_t>(item->Classes));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(static_cast<int32_t>(item->Races));
+		// [DH_BLOB_OLD_ORDER] buffer.WriteInt32(static_cast<int32_t>(item->Deity));
 
-		buffer.WriteInt32(ExtractIDFile(item->IDFile));
-		buffer.WriteInt32(0);
-		buffer.WriteInt32(static_cast<int32_t>(item->ID));
-		buffer.WriteInt32(static_cast<int32_t>(item->Slots));
-		buffer.WriteInt32(static_cast<int32_t>(item->Price));
-		buffer.WriteInt32(item->Icon);
-		buffer.WriteUInt8(0);
-		buffer.WriteUInt8(0);
-		buffer.WriteUInt8(0);
-		buffer.WriteUInt8(0);
-		buffer.WriteInt32(item->Weight);
-		buffer.WriteUInt8(item->NoRent);
-		buffer.WriteUInt8(item->NoDrop);
-		buffer.WriteUInt8(item->Attuneable);
-		buffer.WriteUInt8(0);
-		buffer.WriteUInt8(0);
-		buffer.WriteUInt8(0);
-		buffer.WriteUInt8(0);
-		buffer.WriteUInt8(0);
-		buffer.WriteInt32(0);
-		buffer.WriteUInt8(0);
-		buffer.WriteUInt8(0);
-		buffer.WriteUInt8(0);
-		buffer.WriteUInt8(0);
-		buffer.WriteUInt8(0);
-		buffer.WriteUInt8(0);
-		buffer.WriteUInt8(0);
-		buffer.WriteUInt8(0);
-		buffer.WriteUInt8(0);
-		buffer.WriteInt32(0);
-		buffer.WriteUInt8(item->Size);
-		buffer.WriteUInt8(item->ItemClass);
-		buffer.WriteUInt8(item->Tradeskills ? 1u : 0u);
-		buffer.WriteUInt8(0);
-		buffer.WriteInt32(item->LoreGroup);
-		buffer.WriteInt32(0);
-		buffer.WriteUInt8(0);
-		buffer.WriteUInt8(static_cast<uint8_t>(item->CR));
-		buffer.WriteUInt8(static_cast<uint8_t>(item->FR));
-		buffer.WriteUInt8(static_cast<uint8_t>(item->MR));
-		buffer.WriteUInt8(static_cast<uint8_t>(item->DR));
-		buffer.WriteUInt8(static_cast<uint8_t>(item->PR));
-		buffer.WriteUInt8(static_cast<uint8_t>(item->SVCorruption));
-		buffer.WriteUInt8(static_cast<uint8_t>(item->AStr));
-		buffer.WriteUInt8(static_cast<uint8_t>(item->ASta));
-		buffer.WriteUInt8(static_cast<uint8_t>(item->AAgi));
-		buffer.WriteUInt8(static_cast<uint8_t>(item->ADex));
-		buffer.WriteUInt8(static_cast<uint8_t>(item->ACha));
-		buffer.WriteUInt8(static_cast<uint8_t>(item->AInt));
-		buffer.WriteUInt8(static_cast<uint8_t>(item->AWis));
-		buffer.WriteUInt8(0);
-		buffer.WriteUInt8(0);
-		buffer.WriteInt32(item->HP);
-		buffer.WriteInt32(item->Mana);
-		buffer.WriteInt32(item->AC);
-		buffer.WriteInt32(static_cast<int32_t>(item->ReqLevel));
-		buffer.WriteInt32(static_cast<int32_t>(item->RecLevel));
-		buffer.WriteInt32(0);
-		buffer.WriteInt32(0);
-		buffer.WriteInt32(0);
-		buffer.WriteInt32(0);
-		buffer.WriteInt32(0);
-		buffer.WriteInt32(0);
-		buffer.WriteInt32(0);
-		buffer.WriteInt32(0);
-		buffer.WriteInt32(0);
-		buffer.WriteInt32(0);
-		buffer.WriteInt32(static_cast<int32_t>(item->Classes));
-		buffer.WriteInt32(static_cast<int32_t>(item->Races));
-		buffer.WriteInt32(static_cast<int32_t>(item->Deity));
+		// [DH_BLOB_REORDER] Field order matches client sub_14065BD70 read sequence (ItemData: CR=SvCold, DR=SvDisease, PR=SvPoison, MR=SvMagic, FR=SvFire).
+		// buffer.WriteUInt8(static_cast<uint8_t>(item->ItemClass));  // [DH_BLOB_REORDER] 1 [rdi+0xE9] ItemClass — [DH_ITEMCLASS_TEST] superseded below
+		buffer.WriteUInt8(0);  // [DH_ITEMCLASS_TEST] temporary: force ItemClass 0 for name/UI experiment
+		buffer.WriteBytes(item->Name, strlen(item->Name) + 1);      // [DH_BLOB_REORDER] 2 [rdi+0x00] Name varlen NUL
+		buffer.WriteBytes(item->Lore, strlen(item->Lore) + 1);     // [DH_BLOB_REORDER] 3 [rdi+0x40] Lore varlen NUL
+		buffer.WriteInt32(ExtractIDFile(item->IDFile));            // [DH_BLOB_REORDER] 4 [rdi+0xB0] IDFile
+		buffer.WriteInt32(0);                                       // [DH_BLOB_REORDER] 5 [rdi+0xB4] IDFile2
+		buffer.WriteInt32(static_cast<int32_t>(item->ID));          // [DH_BLOB_REORDER] 6 [rdi+0xB8] ItemNumber
+		buffer.WriteInt32(static_cast<int32_t>(item->Weight));      // [DH_BLOB_REORDER] 7 [rdi+0xCC] Weight
+		buffer.WriteUInt8(item->NoRent);                            // [DH_BLOB_REORDER] 8 [rdi+0xD0] NoRent
+		buffer.WriteUInt8(item->NoDrop);                            // [DH_BLOB_REORDER] 9 [rdi+0xD1] NoDrop
+		buffer.WriteUInt8(static_cast<uint8_t>(item->Attuneable ? 1u : 0u));  // [DH_BLOB_REORDER] 10 [rdi+0xD2] Attuneable
+		buffer.WriteUInt8(static_cast<uint8_t>(item->Size));       // [DH_BLOB_REORDER] 11 [rdi+0xE8] Size
+		buffer.WriteInt32(static_cast<int32_t>(item->Slots));       // [DH_BLOB_REORDER] 12 [rdi+0xBC] EquipSlots
+		buffer.WriteInt32(0);                                       // [DH_BLOB_REORDER] 13 [rdi+0xC0] Cost = 0 (avoid bogus item ptr)
+		buffer.WriteInt32(item->Icon);                              // [DH_BLOB_REORDER] 14 [rdi+0xC4] IconNumber
+		buffer.WriteUInt8(0);                                       // [DH_BLOB_REORDER] 15 [rdi+0xC8] eGMRequirement
+		buffer.WriteUInt8(0);                                       // [DH_BLOB_REORDER] 16 [rdi+0xEA] unknown
+		buffer.WriteUInt8(static_cast<uint8_t>(item->CR));          // [DH_BLOB_REORDER] 17 [rdi+0xF5] SvCold (ItemData::CR)
+		buffer.WriteUInt8(static_cast<uint8_t>(item->DR));          // [DH_BLOB_REORDER] 18 [rdi+0xF8] SvDisease (ItemData::DR)
+		buffer.WriteUInt8(static_cast<uint8_t>(item->PR));          // [DH_BLOB_REORDER] 19 [rdi+0xF9] SvPoison (ItemData::PR)
+		buffer.WriteUInt8(static_cast<uint8_t>(item->MR));          // [DH_BLOB_REORDER] 20 [rdi+0xF7] SvMagic (ItemData::MR)
+		buffer.WriteUInt8(static_cast<uint8_t>(item->FR));          // [DH_BLOB_REORDER] 21 [rdi+0xF6] SvFire (ItemData::FR)
+		buffer.WriteUInt8(static_cast<uint8_t>(item->SVCorruption)); // [DH_BLOB_REORDER] 22 [rdi+0xFA] SvCorruption
+		buffer.WriteUInt8(static_cast<uint8_t>(item->AStr));        // [DH_BLOB_REORDER] 23 [rdi+0xFB]
+		buffer.WriteUInt8(static_cast<uint8_t>(item->ASta));        // [DH_BLOB_REORDER] 24 [rdi+0xFC]
+		buffer.WriteUInt8(static_cast<uint8_t>(item->AAgi));        // [DH_BLOB_REORDER] 25 [rdi+0xFD]
+		buffer.WriteUInt8(static_cast<uint8_t>(item->ADex));        // [DH_BLOB_REORDER] 26 [rdi+0xFE]
+		buffer.WriteUInt8(static_cast<uint8_t>(item->ACha));        // [DH_BLOB_REORDER] 27 [rdi+0xFF]
+		buffer.WriteUInt8(static_cast<uint8_t>(item->AInt));        // [DH_BLOB_REORDER] 28 [rdi+0x100]
+		buffer.WriteUInt8(static_cast<uint8_t>(item->AWis));        // [DH_BLOB_REORDER] 29 [rdi+0x101]
+		buffer.WriteInt32(item->HP);                                // [DH_BLOB_REORDER] 30 [rdi+0x104]
+		buffer.WriteInt32(item->Mana);                              // [DH_BLOB_REORDER] 31 [rdi+0x108]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_REORDER] 32 [rdi+0x56C] unknown
+		buffer.WriteInt32(item->AC);                                // [DH_BLOB_REORDER] 33 [rdi+0x10C]
+		buffer.WriteInt32(0);                                       // [DH_BLOB_REORDER] 34 [rdi+0x574] unknown
+		buffer.WriteInt32(0);                                       // [DH_BLOB_REORDER] 35 [rdi+0x578] unknown
+		buffer.WriteInt32(0);                                       // [DH_BLOB_REORDER] 36 [rdi+0x57C] unknown
+		buffer.WriteInt32(static_cast<int32_t>(item->Classes));     // [DH_BLOB_REORDER] 37 [rdi+0x140]
+		buffer.WriteInt32(static_cast<int32_t>(item->Races));       // [DH_BLOB_REORDER] 38 [rdi+0x144]
+		buffer.WriteInt32(static_cast<int32_t>(item->Deity));       // [DH_BLOB_REORDER] 39 [rdi+0x148]
 
 		const size_t pos = buffer.size();
 		if (pos < LAURION_BLOB_TOTAL_SIZE) {
@@ -4953,8 +4996,9 @@ namespace Laurion
 
 		// Only Dragon's Hoard (5000-5199) uses client-aligned 59-byte header; all other items use original layout.
 		// Non-DH: 16-char ASCII decimal + NUL. DH: [DH_GUID_15CHAR] 15-char + NUL = 16 bytes (client min(strlen+1,16)).
-		// auto item_guid = is_dragon_hoard ? fmt::format("{:015}", inst->GetSerialNumber()) : fmt::format("{:016}", inst->GetSerialNumber());  // [DH_GUID_TEST] temporarily replaced by fixed DH GUID below
-		auto item_guid = is_dragon_hoard ? std::string("000000000000000") : fmt::format("{:016}", inst->GetSerialNumber());  // [DH_GUID_TEST] temporary: all DH items use 15 zero digits (not GetSerialNumber)
+		// auto item_guid = is_dragon_hoard ? fmt::format("{:015}", inst->GetSerialNumber()) : fmt::format("{:016}", inst->GetSerialNumber());  // [DH_GUID_TEST] temporarily replaced by fixed DH GUID below ([DH_GUID_RESTORE] active line restored)
+		// auto item_guid = is_dragon_hoard ? std::string("000000000000000") : fmt::format("{:016}", inst->GetSerialNumber());  // [DH_GUID_TEST] fixed 15 zeros — [DH_GUID_RESTORE] commented out
+		auto item_guid = is_dragon_hoard ? fmt::format("{:015}", inst->GetSerialNumber()) : fmt::format("{:016}", inst->GetSerialNumber());  // [DH_GUID_RESTORE] DH: real serial, {:015}; non-DH: {:016}
 
 		structs::InventorySlot_Struct slot_id{};
 		switch (packet_type) {
@@ -5061,9 +5105,12 @@ namespace Laurion
 			buffer.WriteUInt16(0xFFFF);
 			buffer.WriteUInt16(0xFFFF);
 			// [DH_GLOBALINDEX_FIX] Second triple of uint16s: complete 6-element slot array sub_14029DC10 reads after GlobalIndex header.
-			buffer.WriteUInt16(0xFFFF);
-			buffer.WriteUInt16(0xFFFF);
-			buffer.WriteUInt16(0xFFFF);
+			// buffer.WriteUInt16(0xFFFF);  // [DH_GLOBALINDEX_REVERT] second triple (writes 20–22) commented out — keep first GlobalIndex triple only
+			// buffer.WriteUInt16(0xFFFF);  // [DH_GLOBALINDEX_REVERT]
+			// buffer.WriteUInt16(0xFFFF);  // [DH_GLOBALINDEX_REVERT]
+			buffer.WriteUInt16(0xFFFF);  // [DH_GLOBALINDEX_RESTORE] second triple active again (six uint16s total after WriteUInt32(6))
+			buffer.WriteUInt16(0xFFFF);  // [DH_GLOBALINDEX_RESTORE]
+			buffer.WriteUInt16(0xFFFF);  // [DH_GLOBALINDEX_RESTORE]
 			buffer.WriteUInt32((uint32_t)item->Icon);   // item+0x74 = IconNumber
 			buffer.WriteUInt32(0);                       // item+0x80 (unknown)
 			buffer.WriteUInt8(0);                       // evolving item gate = 0
@@ -5079,6 +5126,10 @@ namespace Laurion
 			buffer.WriteUInt32(0);                      // item+0x38
 			buffer.WriteUInt32((uint32_t)item->ID);     // item+0x54 = ItemNumber for registry
 			{
+				// static const unsigned char k_dh_header_pad_17[17] = {};  // [DH_HEADER_PAD_17] [DH_HEADER_PAD_16] superseded: 16-byte pad below
+				// buffer.WriteBytes(k_dh_header_pad_17, 17);               // [DH_HEADER_PAD_17]
+				static const unsigned char k_dh_header_pad_16[16] = {};  // [DH_HEADER_PAD_16]
+				buffer.WriteBytes(k_dh_header_pad_16, 16);               // [DH_HEADER_PAD_16] pad before item-definition blob (was 17 [DH_HEADER_PAD_17])
 				SerializeBuffer blob_buf;
 				SerializeItemDefinitionLaurionBlob(blob_buf, item);
 				// [DH_BLOB_DUMP] Temporary: first 32 bytes of DH item-definition blob hex (remove after layout verified).
@@ -5233,6 +5284,29 @@ namespace Laurion
 			// LogInfo("[SERIALIZE_ITEM_5000] Serialization complete. Total bytes: {}", serialized_size);
 
 			const unsigned char* buf = buffer.buffer() + buffer_start_pos;
+
+			// Full wire payload for this SerializeItem (DH): GUID/header/blob/post-blob + shared tail (subitems, etc.)
+			{
+				std::ostringstream dh_full_hex;
+				dh_full_hex << std::hex << std::setfill('0');
+				for (size_t bi = 0; bi < serialized_size; ++bi) {
+					if (bi > 0 && (bi % 16) == 0) {
+						dh_full_hex << '\n';
+					}
+					if ((bi % 16) == 0) {
+						dh_full_hex << std::setw(4) << bi << ": ";
+					}
+					dh_full_hex << std::setw(2) << static_cast<unsigned>(buf[bi]) << ' ';
+				}
+				LogError(
+					"[DH_FULL_PACKET_HEX] slot_id_in={} item_id={} serial={} bytes={}\n{}",
+					static_cast<int>(slot_id_in),
+					item->ID,
+					inst->GetSerialNumber(),
+					static_cast<uint64_t>(serialized_size),
+					dh_full_hex.str()
+				);
+			}
 
 			// LogInfo("[SERIALIZE_ITEM_5000] ItemGUID = 16 bytes binary (serial {} in low 8 bytes LE)", inst->GetSerialNumber());
 

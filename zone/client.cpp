@@ -8856,9 +8856,17 @@ void Client::SendDragonHoardItemList() {
 	database.GetDragonHoardItems(AccountID(), CollectDragonHoardItemsCallback, &items);
 	const int total = static_cast<int>(items.size());
 	// [DH_ORDER_RESTORED] back to normal order (slot 1 first, ascending).
-	for (int i = 0; i < total; ++i) {
+	// [DH_REVERSE_ORDER_TEST] sending in reverse vector order (i = total-1 .. 0); was forward: for (int i = 0; i < total; ++i)
+	// for (int i = total - 1; i >= 0; --i) {  // [DH_REVERSE_ORDER_TEST] [DH_ORDER_RESTORED] commented out — forward iteration restored below
+	// int dh_item_list_counter = 0;  // [DH_SKIP_FIRST_TEST] [DH_SKIP_FIRST_REVERT] commented out
+	for (int i = 0; i < total; ++i) {  // [DH_ORDER_RESTORED] forward iteration (reverted [DH_REVERSE_ORDER_TEST])
+		// ++dh_item_list_counter;  // [DH_SKIP_FIRST_TEST] [DH_SKIP_FIRST_REVERT] commented out
 		int16_t slot_id = items[i].first;
 		EQ::ItemInstance* inst = items[i].second;
+		// if (i == 0) {  // [DH_SKIP_FIRST_TEST] [DH_SKIP_FIRST_REVERT] commented out — skip first list item
+		// 	delete inst;
+		// 	continue;
+		// }
 		const EQ::ItemData* item = inst ? inst->GetItem() : nullptr;
 		uint32_t item_id = item ? item->ID : 0;
 		// [DH_ITEMCLASS_DEBUG] blob byte 0 = ItemClass; 136/137/138 suggest wrong field or struct misread
